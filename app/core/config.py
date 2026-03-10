@@ -20,5 +20,7 @@ class Settings(BaseSettings):
     google_client_id: str | None = None
     google_client_secret: str | None = None
 
+    log_level: str = "INFO"
+
 
 settings = Settings()
