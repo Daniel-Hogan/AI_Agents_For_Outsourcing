@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.auth import router as auth_router
 from app.api.availability import router as availability_router
+from app.api.calendar import router as calendar_router
 from app.core.config import settings
 from app.core.logging import configure_logging
 from app.models import User
@@ -72,6 +73,7 @@ def create_app() -> FastAPI:
     api.include_router(router)
     api.include_router(availability_router)
 
+    api.include_router(calendar_router)
     return api
 
 @router.get("/")

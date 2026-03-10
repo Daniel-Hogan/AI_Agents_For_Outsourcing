@@ -1,4 +1,4 @@
-import db from "../db.js";
+import db from "../db/db.js";
 import { buildWorkingBlocks, subtractBusy } from "./availability.utils.js";
 
 export async function getUserAvailability(userId, start, end) {
@@ -31,5 +31,32 @@ export async function getUserAvailability(userId, start, end) {
   );
 
   return subtractBusy(workingBlocks, busy.rows);
+}
+
+export async function addUserAvailability(
+  userId,
+  dayOfWeek,
+  startTime,
+  endTime
+) {
+  if (dayOfWeek < 0 || dayOfWeek > 6) {
+    throw new Error("dayOfWeek must be between 0 and 6");
+  }
+
+  if (startTime >= endTime) {
+    throw new Error("startTime must be before endTime");
+  }
+
+  const result = await db.query(
+    `
+    INSERT INTO time_slot_preferences
+      (user_id, day_of_week, start_time, end_time)
+    VALUES ($1, $2, $3, $4)
+    RETURNING *
+    `,
+    [userId, dayOfWeek, startTime, endTime]
+  );
+
+  return result.rows[0];
 }
 

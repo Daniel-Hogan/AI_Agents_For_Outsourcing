@@ -8,7 +8,18 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(null);
+  const [token, setTokenState] = useState<string | null>(
+    localStorage.getItem("access_token")
+  );
+
+  function setToken(newToken: string | null) {
+    if (newToken) {
+      localStorage.setItem("access_token", newToken);
+    } else {
+      localStorage.removeItem("access_token");
+    }
+    setTokenState(newToken);
+  }
 
   return (
     <AuthContext.Provider value={{ token, setToken }}>
