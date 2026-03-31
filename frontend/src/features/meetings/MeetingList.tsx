@@ -1,10 +1,6 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
-
-import { cancelMeeting, createMeeting, listMeetings, updateMeetingRsvp, type Meeting } from "../../services/meetingsApi";
-
-function toDateTimeString(date: string, time: string) {
-  return `${date}T${time}:00`;
-}
+import { useEffect, useMemo, useState } from "react";
+import { cancelMeeting, listMeetings, updateMeetingRsvp, type Meeting } from "../../services/meetingsApi";
+import CreateMeetingModal from "./CreateMeetingModal";
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString([], {
@@ -16,21 +12,11 @@ function formatDateTime(value: string) {
   });
 }
 
-const DEFAULT_COLOR = "#2563eb";
-
 export default function MeetingList() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [location, setLocation] = useState("");
-  const [date, setDate] = useState("");
-  const [startTime, setStartTime] = useState("09:00");
-  const [endTime, setEndTime] = useState("10:00");
-  const [attendeeEmails, setAttendeeEmails] = useState("");
+  const [isModalOpen, setIsModalOpen] = useState(false); 
 
   async function loadMeetings() {
     setLoading(true);
@@ -46,8 +32,6 @@ export default function MeetingList() {
   }
 
   useEffect(() => {
-    const now = new Date();
-    setDate(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`);
     loadMeetings();
   }, []);
 
@@ -56,47 +40,6 @@ export default function MeetingList() {
     const past = meetings.filter((meeting) => new Date(meeting.end_time) < new Date());
     return { upcoming, past };
   }, [meetings]);
-
-  async function handleCreateMeeting(event: FormEvent) {
-    event.preventDefault();
-    if (!title.trim() || !date) {
-      setError("Please provide a title and date.");
-      return;
-    }
-
-    if (endTime <= startTime) {
-      setError("Meeting end time must be after the start time.");
-      return;
-    }
-
-    setSaving(true);
-    setError("");
-
-    try {
-      const created = await createMeeting({
-        title: title.trim(),
-        description: description.trim() || undefined,
-        location: location.trim() || undefined,
-        color: DEFAULT_COLOR,
-        start_time: toDateTimeString(date, startTime),
-        end_time: toDateTimeString(date, endTime),
-        attendee_emails: attendeeEmails
-          .split(",")
-          .map((email) => email.trim())
-          .filter(Boolean),
-      });
-
-      setMeetings((prev) => [...prev, created].sort((a, b) => a.start_time.localeCompare(b.start_time)));
-      setTitle("");
-      setDescription("");
-      setLocation("");
-      setAttendeeEmails("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create meeting.");
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function handleCancelMeeting(meetingId: number) {
     try {
@@ -118,77 +61,24 @@ export default function MeetingList() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-slate-800 dark:text-white">Meetings</h1>
-        <p className="mt-2 text-slate-500 dark:text-slate-400">
-          Create team meetings, invite registered users by email, and manage RSVP status.
-        </p>
+      <div className="flex justify-between items-start md:items-center flex-col md:flex-row gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-800 dark:text-white">Meetings</h1>
+          <p className="mt-2 text-slate-500 dark:text-slate-400">
+            Create team meetings, invite registered users by email, and manage RSVP status.
+          </p>
+        </div>
+        
+        
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="rounded-lg bg-blue-600 px-5 py-3 font-medium text-white transition hover:bg-blue-500 shadow-sm shrink-0"
+        >
+          + Schedule Meeting
+        </button>
       </div>
 
-      <form onSubmit={handleCreateMeeting} className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="grid gap-4 md:grid-cols-2">
-          <input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder="Meeting title"
-            className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-          />
-          <input
-            value={location}
-            onChange={(event) => setLocation(event.target.value)}
-            placeholder="Location or meeting link"
-            className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-          />
-        </div>
-
-        <textarea
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          placeholder="Description"
-          rows={3}
-          className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-        />
-
-        <div className="grid gap-4 md:grid-cols-3">
-          <input
-            type="date"
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-            className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-          />
-          <input
-            type="time"
-            value={startTime}
-            onChange={(event) => setStartTime(event.target.value)}
-            className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-          />
-          <input
-            type="time"
-            value={endTime}
-            onChange={(event) => setEndTime(event.target.value)}
-            className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-          />
-        </div>
-
-        <input
-          value={attendeeEmails}
-          onChange={(event) => setAttendeeEmails(event.target.value)}
-          placeholder="Invite attendee emails, comma-separated"
-          className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-        />
-
-        {error ? <p className="text-sm text-red-500">{error}</p> : null}
-
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-lg bg-blue-600 px-5 py-3 font-medium text-white transition hover:bg-blue-500 disabled:opacity-50"
-          >
-            {saving ? "Creating..." : "Create Meeting"}
-          </button>
-        </div>
-      </form>
+      {error ? <p className="text-sm text-red-500">{error}</p> : null}
 
       {loading ? <div className="rounded-xl bg-white p-6 text-slate-500 shadow-sm dark:bg-slate-900 dark:text-slate-400">Loading meetings...</div> : null}
 
@@ -231,19 +121,18 @@ export default function MeetingList() {
           </section>
         </div>
       ) : null}
+
+      
+      <CreateMeetingModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        onSuccess={loadMeetings} 
+      />
     </div>
   );
 }
 
-function MeetingCard({
-  meeting,
-  onCancel,
-  onRsvp,
-}: {
-  meeting: Meeting;
-  onCancel: (meetingId: number) => Promise<void>;
-  onRsvp: (meetingId: number, status: "accepted" | "declined") => Promise<void>;
-}) {
+function MeetingCard({ meeting, onCancel, onRsvp }: { meeting: Meeting; onCancel: (meetingId: number) => Promise<void>; onRsvp: (meetingId: number, status: "accepted" | "declined") => Promise<void>; }) {
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-start justify-between gap-4">
@@ -281,29 +170,13 @@ function MeetingCard({
       {meeting.status !== "cancelled" ? (
         <div className="mt-5 flex flex-wrap gap-3">
           {meeting.is_organizer ? (
-            <button
-              type="button"
-              onClick={() => void onCancel(meeting.id)}
-              className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/30"
-            >
+            <button type="button" onClick={() => void onCancel(meeting.id)} className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/30">
               Cancel Meeting
             </button>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={() => void onRsvp(meeting.id, "accepted")}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500"
-              >
-                Accept
-              </button>
-              <button
-                type="button"
-                onClick={() => void onRsvp(meeting.id, "declined")}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                Decline
-              </button>
+              <button type="button" onClick={() => void onRsvp(meeting.id, "accepted")} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500">Accept</button>
+              <button type="button" onClick={() => void onRsvp(meeting.id, "declined")} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Decline</button>
             </>
           )}
         </div>
