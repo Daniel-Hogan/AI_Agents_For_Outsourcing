@@ -9,7 +9,7 @@ class MeetingAttendeeSummary(BaseModel):
     email: str
     first_name: str
     last_name: str
-    status: Literal["invited", "accepted", "declined"]
+    status: Literal["invited", "accepted", "declined", "maybe"]
 
 
 class MeetingBase(BaseModel):
@@ -54,7 +54,7 @@ class MeetingUpdate(BaseModel):
 
 
 class MeetingRsvpUpdate(BaseModel):
-    status: Literal["accepted", "declined"]
+    status: Literal["accepted", "declined", "maybe"]
 
 
 class MeetingResponse(BaseModel):
@@ -73,7 +73,7 @@ class MeetingResponse(BaseModel):
     created_by: int | None
     created_at: datetime
     is_organizer: bool
-    current_user_status: Literal["invited", "accepted", "declined"] | None
+    current_user_status: Literal["invited", "accepted", "declined", "maybe"] | None
     attendee_count: int
     accepted_count: int
     declined_count: int

@@ -5,7 +5,7 @@ export interface MeetingAttendee {
   email: string;
   first_name: string;
   last_name: string;
-  status: "invited" | "accepted" | "declined";
+  status: "invited" | "accepted" | "declined" | "maybe";
 }
 
 export interface Meeting {
@@ -24,7 +24,7 @@ export interface Meeting {
   created_by: number | null;
   created_at: string;
   is_organizer: boolean;
-  current_user_status: "invited" | "accepted" | "declined" | null;
+  current_user_status: "invited" | "accepted" | "declined" | "maybe" | null;
   attendee_count: number;
   accepted_count: number;
   declined_count: number;
@@ -62,7 +62,10 @@ export async function cancelMeeting(meetingId: number) {
   });
 }
 
-export async function updateMeetingRsvp(meetingId: number, status: "accepted" | "declined") {
+export async function updateMeetingRsvp(
+  meetingId: number,
+  status: "accepted" | "declined" | "maybe"
+) {
   return apiJson<Meeting>(`/meetings/${meetingId}/rsvp`, {
     method: "POST",
     body: JSON.stringify({ status }),

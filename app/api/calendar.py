@@ -29,7 +29,6 @@ class EventUpdate(BaseModel):
     color: Optional[str] = None
 
 
-
 class AvailabilityCreate(BaseModel):
     day_of_week: int  # 0=Sunday, 6=Saturday
     start_time: str   # "HH:MM"
@@ -48,15 +47,35 @@ def get_events(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get all events for the current user's calendar."""
+    """
+    Get all events for the current user's calendar.
+    Includes:
+      1. Meetings the user owns (via calendar_id)
+      2. Meetings the user accepted/maybe'd (via attendee_calendar_links)
+    Excludes cancelled meetings from both sources.
+    """
     calendar_id = get_or_create_user_calendar(current_user.id, db)
 
     events = db.execute(text("""
-        SELECT id, title, location, COALESCE(color, '#3498db') AS color, start_time, end_time
-        FROM meetings
-        WHERE calendar_id = :calendar_id
-        ORDER BY start_time ASC
-    """), {"calendar_id": calendar_id}).mappings().all()
+        SELECT DISTINCT m.id, m.title, m.location, COALESCE(m.color, '#3498db') AS color, m.start_time, m.end_time
+        FROM meetings m
+        WHERE
+            COALESCE(m.status, 'confirmed') <> 'cancelled'
+            AND (
+                -- Meetings the user owns
+                m.calendar_id = :calendar_id
+                OR
+                -- Meetings the user accepted or said maybe to
+                EXISTS (
+                    SELECT 1 FROM attendee_calendar_links acl
+                    WHERE acl.meeting_id = m.id AND acl.user_id = :user_id
+                )
+            )
+        ORDER BY m.start_time ASC
+    """), {
+        "calendar_id": calendar_id,
+        "user_id": current_user.id,
+    }).mappings().all()
 
     return [dict(e) for e in events]
 
@@ -101,7 +120,6 @@ def update_event(
     """Update an existing event."""
     calendar_id = get_or_create_user_calendar(current_user.id, db)
 
-    # Make sure this event belongs to the user
     existing = db.execute(text("""
         SELECT id FROM meetings
         WHERE id = :event_id AND calendar_id = :calendar_id
