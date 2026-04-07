@@ -24,12 +24,17 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
   const [attendeeEmails, setAttendeeEmails] = useState("");
+  
+  // State for recommended slots
+  const [recommendedSlots, setRecommendedSlots] = useState<{start: string, end: string}[] | null>(null);
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
   // Pre-fill today's date when modal opens
   useEffect(() => {
     if (isOpen) {
       const now = new Date();
       setDate(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`);
+      setRecommendedSlots(null);
     }
   }, [isOpen]);
 
@@ -78,6 +83,24 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
     }
   }
 
+  // replace this with an API call to get recommended times
+  const fetchRecommendedSlots = () => {
+    setLoadingSlots(true);
+    setTimeout(() => {
+      setRecommendedSlots([
+        { start: "10:00", end: "11:00" },
+        { start: "13:30", end: "14:30" },
+        { start: "15:00", end: "16:00" }
+      ]);
+      setLoadingSlots(false);
+    }, 500); 
+  };
+
+  const handleSelectSlot = (slot: {start: string, end: string}) => {
+    setStartTime(slot.start);
+    setEndTime(slot.end);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
       <div className="relative w-full max-w-lg p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl">
@@ -112,7 +135,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
             <input
               type="date"
               value={date}
-              onChange={(event) => setDate(event.target.value)}
+              onChange={(event) => { setDate(event.target.value); setRecommendedSlots(null); }}
               className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white [color-scheme:dark]"
             />
             <input
@@ -127,6 +150,39 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
               onChange={(event) => setEndTime(event.target.value)}
               className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white [color-scheme:dark]"
             />
+          </div>
+
+          {/* recommended time slots  */}
+          <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Recommended Times</span>
+              <button 
+                type="button" 
+                onClick={fetchRecommendedSlots} 
+                disabled={loadingSlots}
+                className="text-blue-600 dark:text-blue-400 text-sm hover:underline disabled:opacity-50"
+              >
+                {loadingSlots ? "Searching..." : "Find Slots"}
+              </button>
+            </div>
+            
+            {recommendedSlots && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                {recommendedSlots.map((slot, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => handleSelectSlot(slot)}
+                    className="px-3 py-1.5 text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60 rounded-full transition-colors"
+                  >
+                    {slot.start} - {slot.end}
+                  </button>
+                ))}
+                {recommendedSlots.length === 0 && (
+                  <span className="text-xs text-slate-500">No recommended slots found for this date.</span>
+                )}
+              </div>
+            )}
           </div>
 
           <input
