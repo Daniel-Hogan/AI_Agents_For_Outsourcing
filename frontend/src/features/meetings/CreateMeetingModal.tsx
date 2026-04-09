@@ -1,5 +1,9 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { createMeeting } from "../../services/meetingsApi";
+import {
+  createMeeting,
+  fetchMeetingRecommendations,
+  type MeetingRecommendation,
+} from "../../services/meetingsApi";
 
 interface CreateMeetingModalProps {
   isOpen: boolean;
@@ -13,9 +17,28 @@ function toDateTimeString(date: string, time: string) {
 
 const DEFAULT_COLOR = "#2563eb";
 
+function getDurationMinutes(start: string, end: string) {
+  const [startHour, startMinute] = start.split(":").map(Number);
+  const [endHour, endMinute] = end.split(":").map(Number);
+  return endHour * 60 + endMinute - (startHour * 60 + startMinute);
+}
+
+function extractTime(value: string) {
+  const [, timePart = ""] = value.split("T");
+  return timePart.slice(0, 5);
+}
+
+function formatTimeChip(value: string) {
+  const [hours, minutes] = extractTime(value).split(":").map(Number);
+  const date = new Date();
+  date.setHours(hours, minutes, 0, 0);
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
 export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: CreateMeetingModalProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [slotError, setSlotError] = useState("");
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -26,7 +49,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
   const [attendeeEmails, setAttendeeEmails] = useState("");
   
   // State for recommended slots
-  const [recommendedSlots, setRecommendedSlots] = useState<{start: string, end: string}[] | null>(null);
+  const [recommendedSlots, setRecommendedSlots] = useState<MeetingRecommendation[] | null>(null);
   const [loadingSlots, setLoadingSlots] = useState(false);
 
   // Pre-fill today's date when modal opens
@@ -35,6 +58,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
       const now = new Date();
       setDate(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`);
       setRecommendedSlots(null);
+      setSlotError("");
     }
   }, [isOpen]);
 
@@ -83,22 +107,48 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
     }
   }
 
-  // replace this with an API call to get recommended times
-  const fetchRecommendedSlots = () => {
+  const fetchRecommendedSlots = async () => {
+    if (!date) {
+      setSlotError("Pick a date first.");
+      return;
+    }
+
+    const durationMinutes = getDurationMinutes(startTime, endTime);
+    if (durationMinutes <= 0) {
+      setSlotError("Set an end time that is after the start time.");
+      return;
+    }
+
     setLoadingSlots(true);
-    setTimeout(() => {
-      setRecommendedSlots([
-        { start: "10:00", end: "11:00" },
-        { start: "13:30", end: "14:30" },
-        { start: "15:00", end: "16:00" }
-      ]);
+    setSlotError("");
+
+    try {
+      const attendeeList = attendeeEmails
+        .split(",")
+        .map((email) => email.trim())
+        .filter(Boolean);
+
+      const response = await fetchMeetingRecommendations({
+        attendee_emails: attendeeList,
+        start_date: date,
+        end_date: date,
+        duration_minutes: durationMinutes,
+        max_results: 3,
+        include_organizer: true,
+      });
+
+      setRecommendedSlots(response.recommendations);
+    } catch (err) {
+      setRecommendedSlots([]);
+      setSlotError(err instanceof Error ? err.message : "Failed to find recommended time slots.");
+    } finally {
       setLoadingSlots(false);
-    }, 500); 
+    }
   };
 
-  const handleSelectSlot = (slot: {start: string, end: string}) => {
-    setStartTime(slot.start);
-    setEndTime(slot.end);
+  const handleSelectSlot = (slot: MeetingRecommendation) => {
+    setStartTime(extractTime(slot.start_time));
+    setEndTime(extractTime(slot.end_time));
   };
 
   return (
@@ -132,24 +182,36 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
           />
 
           <div className="grid gap-4 md:grid-cols-3">
-            <input
-              type="date"
-              value={date}
-              onChange={(event) => { setDate(event.target.value); setRecommendedSlots(null); }}
-              className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white [color-scheme:dark]"
-            />
-            <input
-              type="time"
-              value={startTime}
-              onChange={(event) => setStartTime(event.target.value)}
-              className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white [color-scheme:dark]"
-            />
-            <input
-              type="time"
-              value={endTime}
-              onChange={(event) => setEndTime(event.target.value)}
-              className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white [color-scheme:dark]"
-            />
+              <input
+                type="date"
+                value={date}
+                onChange={(event) => {
+                  setDate(event.target.value);
+                  setRecommendedSlots(null);
+                  setSlotError("");
+                }}
+                className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white [color-scheme:dark]"
+              />
+              <input
+                type="time"
+                value={startTime}
+                onChange={(event) => {
+                  setStartTime(event.target.value);
+                  setRecommendedSlots(null);
+                  setSlotError("");
+                }}
+                className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white [color-scheme:dark]"
+              />
+              <input
+                type="time"
+                value={endTime}
+                onChange={(event) => {
+                  setEndTime(event.target.value);
+                  setRecommendedSlots(null);
+                  setSlotError("");
+                }}
+                className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white [color-scheme:dark]"
+              />
           </div>
 
           {/* recommended time slots  */}
@@ -165,6 +227,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
                 {loadingSlots ? "Searching..." : "Find Slots"}
               </button>
             </div>
+            {slotError ? <p className="mt-2 text-xs text-red-500">{slotError}</p> : null}
             
             {recommendedSlots && (
               <div className="flex flex-wrap gap-2 mt-3">
@@ -174,8 +237,9 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
                     type="button"
                     onClick={() => handleSelectSlot(slot)}
                     className="px-3 py-1.5 text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60 rounded-full transition-colors"
+                    title={slot.reason}
                   >
-                    {slot.start} - {slot.end}
+                    {formatTimeChip(slot.start_time)} - {formatTimeChip(slot.end_time)}
                   </button>
                 ))}
                 {recommendedSlots.length === 0 && (
@@ -187,7 +251,11 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
 
           <input
             value={attendeeEmails}
-            onChange={(event) => setAttendeeEmails(event.target.value)}
+            onChange={(event) => {
+              setAttendeeEmails(event.target.value);
+              setRecommendedSlots(null);
+              setSlotError("");
+            }}
             placeholder="Invite attendee emails, comma-separated"
             className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
           />

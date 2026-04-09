@@ -1,3 +1,6 @@
+from datetime import date
+
+
 def register_user(client, *, first_name: str, last_name: str, email: str, password: str = "supersecret123"):
     response = client.post(
         "/auth/register",
@@ -14,6 +17,10 @@ def register_user(client, *, first_name: str, last_name: str, email: str, passwo
 
 def auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def day_index_for(date_string: str) -> int:
+    return (date.fromisoformat(date_string).weekday() + 1) % 7
 
 
 def test_calendar_event_crud(client):
@@ -84,13 +91,23 @@ def test_meeting_lifecycle_and_rsvp(client):
     assert len(attendee_items) == 1
     assert attendee_items[0]["current_user_status"] == "invited"
 
+    attendee_calendar_before_response = client.get("/calendar/events", headers=auth_headers(attendee_token))
+    assert attendee_calendar_before_response.status_code == 200, attendee_calendar_before_response.text
+    assert attendee_calendar_before_response.json() == []
+
     rsvp_response = client.post(
         f"/meetings/{created['id']}/rsvp",
         headers=auth_headers(attendee_token),
-        json={"status": "accepted"},
+        json={"status": "maybe"},
     )
     assert rsvp_response.status_code == 200, rsvp_response.text
-    assert rsvp_response.json()["accepted_count"] == 2
+    assert rsvp_response.json()["maybe_count"] == 1
+
+    attendee_calendar_after_response = client.get("/calendar/events", headers=auth_headers(attendee_token))
+    assert attendee_calendar_after_response.status_code == 200, attendee_calendar_after_response.text
+    attendee_calendar_events = attendee_calendar_after_response.json()
+    assert len(attendee_calendar_events) == 1
+    assert attendee_calendar_events[0]["title"] == "Sprint Planning"
 
     cancel_response = client.post(
         f"/meetings/{created['id']}/cancel",
@@ -109,3 +126,61 @@ def test_meeting_lifecycle_and_rsvp(client):
     )
     assert visible_cancelled_response.status_code == 200, visible_cancelled_response.text
     assert len(visible_cancelled_response.json()) == 1
+
+
+def test_meeting_recommendations_full_match_only(client):
+    organizer_token = register_user(client, first_name="Ada", last_name="Lovelace", email="ada@example.com")
+    attendee_token = register_user(client, first_name="Grace", last_name="Hopper", email="grace@example.com")
+    recommendation_date = "2026-04-07"
+    day_index = day_index_for(recommendation_date)
+
+    organizer_availability = client.post(
+        "/availability/",
+        headers=auth_headers(organizer_token),
+        json=[
+            {"day_of_week": day_index, "start_time": "09:00:00", "end_time": "12:00:00"}
+        ],
+    )
+    assert organizer_availability.status_code == 200, organizer_availability.text
+
+    attendee_availability = client.post(
+        "/availability/",
+        headers=auth_headers(attendee_token),
+        json=[
+            {"day_of_week": day_index, "start_time": "09:00:00", "end_time": "12:00:00"}
+        ],
+    )
+    assert attendee_availability.status_code == 200, attendee_availability.text
+
+    blocking_meeting = client.post(
+        "/meetings/",
+        headers=auth_headers(attendee_token),
+        json={
+            "title": "Existing Conflict",
+            "start_time": f"{recommendation_date}T10:00:00",
+            "end_time": f"{recommendation_date}T11:00:00",
+            "attendee_emails": [],
+        },
+    )
+    assert blocking_meeting.status_code == 200, blocking_meeting.text
+
+    recommendation_response = client.post(
+        "/meetings/recommendations",
+        headers=auth_headers(organizer_token),
+        json={
+            "attendee_emails": ["grace@example.com"],
+            "start_date": recommendation_date,
+            "end_date": recommendation_date,
+            "duration_minutes": 60,
+            "max_results": 3,
+            "include_organizer": True,
+        },
+    )
+    assert recommendation_response.status_code == 200, recommendation_response.text
+
+    payload = recommendation_response.json()
+    assert payload["duration_minutes"] == 60
+    assert [recommendation["start_time"] for recommendation in payload["recommendations"]] == [
+        f"{recommendation_date}T09:00:00",
+        f"{recommendation_date}T11:00:00",
+    ]

@@ -77,5 +77,6 @@ class MeetingResponse(BaseModel):
     attendee_count: int
     accepted_count: int
     declined_count: int
+    maybe_count: int
     invited_count: int
     attendees: list[MeetingAttendeeSummary]

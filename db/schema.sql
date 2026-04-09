@@ -100,7 +100,7 @@ CREATE TABLE meetings (
 CREATE TABLE meeting_attendees (
   meeting_id INTEGER REFERENCES meetings(id) ON DELETE CASCADE,
   user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  status TEXT CHECK (status IN ('invited', 'accepted', 'declined')),
+  status TEXT CHECK (status IN ('invited', 'accepted', 'declined', 'maybe')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (meeting_id, user_id)
 );

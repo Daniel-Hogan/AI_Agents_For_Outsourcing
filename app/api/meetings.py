@@ -6,6 +6,8 @@ from app.api.deps import get_current_user, get_db
 from app.db.calendars import get_or_create_user_calendar
 from app.models import User
 from app.schemas.meetings import MeetingCreate, MeetingResponse, MeetingRsvpUpdate, MeetingUpdate
+from app.schemas.recommendations import RecommendationRequest, RecommendationResponse
+from app.services.recommendations import recommend_common_slots
 
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
@@ -51,6 +53,22 @@ def _resolve_attendee_user_ids(db: Session, attendee_emails: list[str]) -> list[
     return [found_by_email[email] for email in emails]
 
 
+def _load_users_by_ids(db: Session, user_ids: list[int]) -> list[dict]:
+    if not user_ids:
+        return []
+
+    query = text(
+        """
+        SELECT id, email, first_name, last_name
+        FROM users
+        WHERE id IN :user_ids
+        """
+    ).bindparams(bindparam("user_ids", expanding=True))
+    rows = db.execute(query, {"user_ids": user_ids}).mappings().all()
+    users_by_id = {row["id"]: dict(row) for row in rows}
+    return [users_by_id[user_id] for user_id in user_ids if user_id in users_by_id]
+
+
 def _meeting_access_clause() -> str:
     return "(m.created_by = :user_id OR EXISTS (SELECT 1 FROM meeting_attendees ma2 WHERE ma2.meeting_id = m.id AND ma2.user_id = :user_id))"
 
@@ -79,6 +97,7 @@ def _fetch_meeting_row(meeting_id: int, user_id: int, db: Session):
                 COUNT(ma.user_id) AS attendee_count,
                 COUNT(ma.user_id) FILTER (WHERE ma.status = 'accepted') AS accepted_count,
                 COUNT(ma.user_id) FILTER (WHERE ma.status = 'declined') AS declined_count,
+                COUNT(ma.user_id) FILTER (WHERE ma.status = 'maybe') AS maybe_count,
                 COUNT(ma.user_id) FILTER (WHERE ma.status = 'invited') AS invited_count
             FROM meetings m
             LEFT JOIN meeting_attendees ma ON ma.meeting_id = m.id
@@ -111,8 +130,9 @@ def _fetch_attendees(meeting_id: int, db: Session) -> list[dict]:
             ORDER BY
                 CASE ma.status
                     WHEN 'accepted' THEN 0
-                    WHEN 'invited' THEN 1
-                    ELSE 2
+                    WHEN 'maybe' THEN 1
+                    WHEN 'invited' THEN 2
+                    ELSE 3
                 END,
                 u.email ASC
             """
@@ -181,38 +201,6 @@ def _validate_meeting_window(start_time, end_time) -> None:
         raise HTTPException(status_code=400, detail="end_time must be after start_time")
 
 
-def _sync_attendee_calendar(meeting_id: int, user_id: int, status: str, db: Session) -> None:
-    """
-    When a non-organizer accepts or says maybe, ensure the meeting is linked
-    to their own calendar. When they decline, remove that link if present.
-    Only touches the attendee_calendar_links table — does not reassign
-    the meeting's primary calendar_id (which stays with the organizer).
-    """
-    if status in ("accepted", "maybe"):
-        attendee_calendar_id = get_or_create_user_calendar(user_id, db)
-        db.execute(
-            text(
-                """
-                INSERT INTO attendee_calendar_links (meeting_id, user_id, calendar_id)
-                VALUES (:meeting_id, :user_id, :calendar_id)
-                ON CONFLICT (meeting_id, user_id) DO UPDATE
-                    SET calendar_id = EXCLUDED.calendar_id
-                """
-            ),
-            {"meeting_id": meeting_id, "user_id": user_id, "calendar_id": attendee_calendar_id},
-        )
-    elif status == "declined":
-        db.execute(
-            text(
-                """
-                DELETE FROM attendee_calendar_links
-                WHERE meeting_id = :meeting_id AND user_id = :user_id
-                """
-            ),
-            {"meeting_id": meeting_id, "user_id": user_id},
-        )
-
-
 @router.get("/", response_model=list[MeetingResponse])
 def list_meetings(
     include_cancelled: bool = Query(False),
@@ -246,6 +234,7 @@ def list_meetings(
                 COUNT(ma.user_id) AS attendee_count,
                 COUNT(ma.user_id) FILTER (WHERE ma.status = 'accepted') AS accepted_count,
                 COUNT(ma.user_id) FILTER (WHERE ma.status = 'declined') AS declined_count,
+                COUNT(ma.user_id) FILTER (WHERE ma.status = 'maybe') AS maybe_count,
                 COUNT(ma.user_id) FILTER (WHERE ma.status = 'invited') AS invited_count
             FROM meetings m
             LEFT JOIN meeting_attendees ma ON ma.meeting_id = m.id
@@ -415,14 +404,46 @@ def cancel_meeting(
         {"meeting_id": meeting_id},
     )
 
-    # Remove meeting from everyone's calendar
-    db.execute(
-        text("DELETE FROM attendee_calendar_links WHERE meeting_id = :meeting_id"),
-        {"meeting_id": meeting_id},
-    )
-
     db.commit()
     return _serialize_meeting(meeting_id, current_user.id, db)
+
+
+@router.post("/recommendations", response_model=RecommendationResponse)
+def get_meeting_recommendations(
+    payload: RecommendationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    participant_ids = _resolve_attendee_user_ids(db, [str(email) for email in payload.attendee_emails])
+    if payload.include_organizer and current_user.id not in participant_ids:
+        participant_ids = [current_user.id, *participant_ids]
+
+    if not participant_ids:
+        raise HTTPException(status_code=400, detail="At least one participant is required")
+
+    participant_rows = _load_users_by_ids(db, participant_ids)
+    recommendations = recommend_common_slots(
+        user_ids=participant_ids,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        duration_minutes=payload.duration_minutes,
+        max_results=payload.max_results,
+        db=db,
+    )
+
+    return {
+        "attendees": [
+            {
+                "user_id": row["id"],
+                "email": row["email"],
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+            }
+            for row in participant_rows
+        ],
+        "duration_minutes": payload.duration_minutes,
+        "recommendations": recommendations,
+    }
 
 
 @router.post("/{meeting_id}/rsvp", response_model=MeetingResponse)
@@ -466,10 +487,6 @@ def update_rsvp(
         ),
         {"meeting_id": meeting_id, "user_id": current_user.id, "status": payload.status},
     )
-
-    # Sync calendar for non-organizers
-    if current_user.id != meeting["created_by"]:
-        _sync_attendee_calendar(meeting_id, current_user.id, payload.status, db)
 
     db.commit()
     return _serialize_meeting(meeting_id, current_user.id, db)

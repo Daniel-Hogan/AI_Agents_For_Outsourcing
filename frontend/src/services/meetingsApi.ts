@@ -28,8 +28,30 @@ export interface Meeting {
   attendee_count: number;
   accepted_count: number;
   declined_count: number;
+  maybe_count: number;
   invited_count: number;
   attendees: MeetingAttendee[];
+}
+
+export interface MeetingRecommendation {
+  rank: number;
+  start_time: string;
+  end_time: string;
+  available_attendee_count: number;
+  conflicted_attendee_count: number;
+  score: number;
+  reason: string;
+}
+
+export interface MeetingRecommendationsResponse {
+  attendees: Array<{
+    user_id: number;
+    email: string;
+    first_name: string;
+    last_name: string;
+  }>;
+  duration_minutes: number;
+  recommendations: MeetingRecommendation[];
 }
 
 export interface CreateMeetingPayload {
@@ -45,12 +67,28 @@ export interface CreateMeetingPayload {
   attendee_emails?: string[];
 }
 
+export interface MeetingRecommendationsPayload {
+  attendee_emails?: string[];
+  start_date: string;
+  end_date: string;
+  duration_minutes: number;
+  max_results?: number;
+  include_organizer?: boolean;
+}
+
 export async function listMeetings(includeCancelled = false) {
   return apiJson<Meeting[]>(`/meetings/?include_cancelled=${includeCancelled}`);
 }
 
 export async function createMeeting(payload: CreateMeetingPayload) {
   return apiJson<Meeting>("/meetings/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchMeetingRecommendations(payload: MeetingRecommendationsPayload) {
+  return apiJson<MeetingRecommendationsResponse>("/meetings/recommendations", {
     method: "POST",
     body: JSON.stringify(payload),
   });

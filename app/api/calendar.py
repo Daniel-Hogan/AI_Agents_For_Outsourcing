@@ -51,7 +51,7 @@ def get_events(
     Get all events for the current user's calendar.
     Includes:
       1. Meetings the user owns (via calendar_id)
-      2. Meetings the user accepted/maybe'd (via attendee_calendar_links)
+      2. Meetings the user accepted or marked maybe via meeting_attendees
     Excludes cancelled meetings from both sources.
     """
     calendar_id = get_or_create_user_calendar(current_user.id, db)
@@ -67,8 +67,10 @@ def get_events(
                 OR
                 -- Meetings the user accepted or said maybe to
                 EXISTS (
-                    SELECT 1 FROM attendee_calendar_links acl
-                    WHERE acl.meeting_id = m.id AND acl.user_id = :user_id
+                    SELECT 1 FROM meeting_attendees ma
+                    WHERE ma.meeting_id = m.id
+                      AND ma.user_id = :user_id
+                      AND ma.status IN ('accepted', 'maybe')
                 )
             )
         ORDER BY m.start_time ASC
