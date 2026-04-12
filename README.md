@@ -40,6 +40,39 @@ Web login page: `http://127.0.0.1:8000/`
 - `POST /auth/google/exchange`
 - `POST /auth/link/google`
 
+## Recommendation Endpoint
+
+- `POST /recommendations/meeting-times`
+  - Finds optimal meeting slots for attendees using:
+  - Existing meeting conflicts (owned calendar + invited/accepted meetings)
+  - `time_slot_preferences` windows
+
+Example payload:
+
+```json
+{
+  "attendee_emails": ["alice.demo@example.com", "bob.demo@example.com", "carol.demo@example.com"],
+  "window_start": "2026-03-10T08:00:00Z",
+  "window_end": "2026-03-10T18:00:00Z",
+  "duration_minutes": 60,
+  "slot_interval_minutes": 30,
+  "max_results": 5,
+  "include_current_user": true
+}
+```
+
+Optional demo seed data:
+
+```bash
+psql -U appuser -d appdb -f db/seed_recommendation_demo.sql
+```
+
+If `psql` is not on your PATH, run the Python seed runner instead:
+
+```bash
+py -3.14 db/seed_recommendation_demo.py
+```
+
 ## Notes
 
 - Refresh token is stored in an `HttpOnly` cookie (path `/auth`).

@@ -90,6 +90,67 @@
           style="border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
         >{{ create_form['invitees'] }}</textarea>
 
+        <div style="border:1px solid var(--border); border-radius:12px; padding:12px;">
+          <p style="margin:0 0 10px; font-size:13px; color:var(--muted);">
+            Recommendation settings used by Check availability
+          </p>
+          <div style="display:grid; gap:10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+            <div>
+              <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">Window start</label>
+              <input
+                type="datetime-local"
+                name="recommendation_window_start"
+                value="{{ recommendation_form['window_start'] }}"
+                style="width:100%; border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
+              />
+            </div>
+            <div>
+              <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">Window end</label>
+              <input
+                type="datetime-local"
+                name="recommendation_window_end"
+                value="{{ recommendation_form['window_end'] }}"
+                style="width:100%; border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
+              />
+            </div>
+          </div>
+          <div style="margin-top:10px; display:grid; gap:10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+            <div>
+              <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">Duration (minutes)</label>
+              <input
+                type="number"
+                min="1"
+                max="720"
+                name="recommendation_duration_minutes"
+                value="{{ recommendation_form['duration_minutes'] }}"
+                style="width:100%; border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
+              />
+            </div>
+            <div>
+              <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">Slot interval (minutes)</label>
+              <input
+                type="number"
+                min="1"
+                max="240"
+                name="recommendation_slot_interval_minutes"
+                value="{{ recommendation_form['slot_interval_minutes'] }}"
+                style="width:100%; border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
+              />
+            </div>
+            <div>
+              <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">Max results</label>
+              <input
+                type="number"
+                min="1"
+                max="20"
+                name="recommendation_max_results"
+                value="{{ recommendation_form['max_results'] }}"
+                style="width:100%; border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
+              />
+            </div>
+          </div>
+        </div>
+
         {% if invitable_users %}
           <p style="margin:0; color: var(--muted); font-size: 12px;">
             Registered users: {{ invitable_users|join(", ") }}
@@ -122,6 +183,49 @@
                   <td style="padding:12px; font-size:14px;">{{ p["email"] }}</td>
                   <td style="padding:12px; font-size:14px;">{{ p["status"] }}</td>
                   <td style="padding:12px; font-size:14px;">{{ p["conflicts"] }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+
+      {% if unresolved_recommendation_emails or unresolved_recommendation_user_ids %}
+        <p style="margin:10px 0 0; font-size:13px; color: var(--muted);">
+          Unresolved attendees:
+          {% if unresolved_recommendation_emails %}
+            emails={{ unresolved_recommendation_emails|join(", ") }}
+          {% endif %}
+          {% if unresolved_recommendation_user_ids %}
+            user_ids={{ unresolved_recommendation_user_ids|join(", ") }}
+          {% endif %}
+        </p>
+      {% endif %}
+
+      {% if meeting_recommendations %}
+        <div style="margin-top:12px; overflow:auto; border:1px solid var(--border); border-radius:12px;">
+          <table style="width:100%; border-collapse:collapse; min-width: 980px;">
+            <thead>
+              <tr style="background:#f9fafb;">
+                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Recommended Start</th>
+                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Recommended End</th>
+                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Score</th>
+                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Available</th>
+                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Busy</th>
+                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Preferred</th>
+                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Outside Pref</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for rec in meeting_recommendations %}
+                <tr style="border-top:1px solid var(--border);">
+                  <td style="padding:12px; font-size:14px;">{{ rec["start_time"] }}</td>
+                  <td style="padding:12px; font-size:14px;">{{ rec["end_time"] }}</td>
+                  <td style="padding:12px; font-size:14px;">{{ rec["score"] }}</td>
+                  <td style="padding:12px; font-size:14px;">{{ rec["available_count"] }}</td>
+                  <td style="padding:12px; font-size:14px;">{{ rec["busy_count"] }}</td>
+                  <td style="padding:12px; font-size:14px;">{{ rec["preferred_count"] }}</td>
+                  <td style="padding:12px; font-size:14px;">{{ rec["outside_preference_count"] }}</td>
                 </tr>
               {% endfor %}
             </tbody>

@@ -2,15 +2,17 @@ import re
 from datetime import datetime, time, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from app.api.recommendations import generate_meeting_time_recommendations
 from app.api.deps import get_db
 from app.core.security import verify_password
 from app.models import PasswordCredential, User
+from app.schemas.recommendations import MeetingRecommendationRequest
 
 
 router = APIRouter(tags=["web"])
@@ -366,7 +368,28 @@ def _render_meetings_page(
     mine: bool,
     create_form: dict[str, str] | None = None,
     availability_preview: list[dict[str, Any]] | None = None,
+    recommendation_form: dict[str, str] | None = None,
+    meeting_recommendations: list[dict[str, Any]] | None = None,
+    unresolved_recommendation_emails: list[str] | None = None,
+    unresolved_recommendation_user_ids: list[int] | None = None,
 ):
+    create_form_value = create_form or {
+        "title": "",
+        "location": "",
+        "start_time": "",
+        "end_time": "",
+        "invitees": "",
+    }
+    recommendation_form_value = {
+        "window_start": create_form_value["start_time"],
+        "window_end": create_form_value["end_time"],
+        "duration_minutes": "60",
+        "slot_interval_minutes": "30",
+        "max_results": "5",
+    }
+    if recommendation_form:
+        recommendation_form_value.update(recommendation_form)
+
     return templates.TemplateResponse(
         request=request,
         name="meetings.html",
@@ -377,9 +400,12 @@ def _render_meetings_page(
             "mine": mine,
             "email": user.email,
             "messages": _pop_flashes(request),
-            "create_form": create_form
-            or {"title": "", "location": "", "start_time": "", "end_time": "", "invitees": ""},
+            "create_form": create_form_value,
             "availability_preview": availability_preview or [],
+            "recommendation_form": recommendation_form_value,
+            "meeting_recommendations": meeting_recommendations or [],
+            "unresolved_recommendation_emails": unresolved_recommendation_emails or [],
+            "unresolved_recommendation_user_ids": unresolved_recommendation_user_ids or [],
             "invitable_users": _invitable_users(db, user.id),
         },
     )
@@ -573,6 +599,11 @@ def meetings_availability(
     start_time: str = Form(""),
     end_time: str = Form(""),
     invitees: str = Form(""),
+    recommendation_window_start: str = Form(""),
+    recommendation_window_end: str = Form(""),
+    recommendation_duration_minutes: str = Form("60"),
+    recommendation_slot_interval_minutes: str = Form("30"),
+    recommendation_max_results: str = Form("5"),
     q: str = Form(""),
     status: str = Form(""),
     mine: str = Form(""),
@@ -593,6 +624,13 @@ def meetings_availability(
         "end_time": end_time.strip(),
         "invitees": invitees.strip(),
     }
+    recommendation_form = {
+        "window_start": recommendation_window_start.strip() or start_time.strip(),
+        "window_end": recommendation_window_end.strip() or end_time.strip(),
+        "duration_minutes": recommendation_duration_minutes.strip() or "60",
+        "slot_interval_minutes": recommendation_slot_interval_minutes.strip() or "30",
+        "max_results": recommendation_max_results.strip() or "5",
+    }
 
     try:
         start_dt = _parse_datetime_local(start_time)
@@ -607,6 +645,7 @@ def meetings_availability(
             status=status_norm,
             mine=mine_enabled,
             create_form=create_form,
+            recommendation_form=recommendation_form,
         )
 
     if end_dt <= start_dt:
@@ -619,6 +658,7 @@ def meetings_availability(
             status=status_norm,
             mine=mine_enabled,
             create_form=create_form,
+            recommendation_form=recommendation_form,
         )
 
     emails, invalid_emails = _parse_invitee_emails(invitees)
@@ -634,10 +674,38 @@ def meetings_availability(
             status=status_norm,
             mine=mine_enabled,
             create_form=create_form,
+            recommendation_form=recommendation_form,
         )
 
     preview = _build_availability_preview(db, emails=emails, slot_start=start_dt, slot_end=end_dt)
-    _push_flash(request, "success", "Availability preview updated.")
+
+    recommendations: list[dict[str, Any]] = []
+    unresolved_user_ids: list[int] = []
+    unresolved_emails: list[str] = []
+    try:
+        recommendation_payload = MeetingRecommendationRequest(
+            attendee_emails=emails,
+            window_start=_parse_datetime_local(recommendation_form["window_start"]),
+            window_end=_parse_datetime_local(recommendation_form["window_end"]),
+            duration_minutes=int(recommendation_form["duration_minutes"]),
+            slot_interval_minutes=int(recommendation_form["slot_interval_minutes"]),
+            max_results=int(recommendation_form["max_results"]),
+            include_current_user=True,
+        )
+        recommendation_response = generate_meeting_time_recommendations(
+            payload=recommendation_payload,
+            db=db,
+            current_user=user,
+        )
+        recommendations = [rec.model_dump(mode="python") for rec in recommendation_response.recommendations]
+        unresolved_user_ids = recommendation_response.unresolved_user_ids
+        unresolved_emails = recommendation_response.unresolved_emails
+        _push_flash(request, "success", "Availability preview and recommendations updated.")
+    except HTTPException as exc:
+        _push_flash(request, "error", f"Recommendations unavailable: {exc.detail}")
+    except Exception:
+        _push_flash(request, "error", "Recommendations unavailable due to invalid recommendation settings.")
+
     return _render_meetings_page(
         request,
         db=db,
@@ -647,6 +715,10 @@ def meetings_availability(
         mine=mine_enabled,
         create_form=create_form,
         availability_preview=preview,
+        recommendation_form=recommendation_form,
+        meeting_recommendations=recommendations,
+        unresolved_recommendation_emails=unresolved_emails,
+        unresolved_recommendation_user_ids=unresolved_user_ids,
     )
 
 

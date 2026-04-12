@@ -20,6 +20,7 @@ from app.web.routes import router as web_router
 
 
 from app.api.auth import router as auth_router
+from app.api.recommendations import router as recommendations_router
 from app.core.config import settings
 
 router = APIRouter(prefix="/groups", tags=["groups"])
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
     api.mount("/static", StaticFiles(directory="app/static"), name="static")
     api.include_router(web_router)
     api.include_router(auth_router)
+    api.include_router(recommendations_router)
     return api
 
 @router.get("/")
