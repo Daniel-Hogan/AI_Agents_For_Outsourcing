@@ -22,6 +22,8 @@ This repo currently includes:
 - Copy `.env.example` to `.env`
 - Fill in `JWT_SECRET`
 - (Optional) Fill in `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for Google login
+- (Optional) Fill in `OPENROUTESERVICE_API_KEY` to enable meeting travel-time warnings
+- (Optional) Fill in `ORGANIZATION_DEFAULT_LOCATION` and coordinates for the final travel-origin fallback
 
 4) Run API
 
@@ -29,6 +31,24 @@ This repo currently includes:
 
 API docs: `http://127.0.0.1:8000/docs`
 Web login page: `http://127.0.0.1:8000/`
+
+## Travel-Time Warnings
+
+The meetings page can now evaluate travel feasibility between meetings using `openrouteservice` routing and OpenStreetMap-based geocoding.
+
+Relevant environment variables:
+
+- `OPENROUTESERVICE_API_KEY`
+- `OPENROUTESERVICE_BASE_URL` (defaults to `https://api.openrouteservice.org`)
+- `OPENROUTESERVICE_TIMEOUT_SECONDS`
+- `OPENROUTESERVICE_PROFILE` (defaults to `driving-car`)
+- `TRAVEL_WARNING_BUFFER_MINUTES`
+- `TRAVEL_WARNING_TIGHT_WINDOW_MINUTES`
+- `ORGANIZATION_DEFAULT_LOCATION`
+- `ORGANIZATION_DEFAULT_LOCATION_LATITUDE`
+- `ORGANIZATION_DEFAULT_LOCATION_LONGITUDE`
+
+If the ORS provider is unavailable or a meeting location cannot be resolved, the page continues rendering without travel warnings.
 
 ## Auth Endpoints
 

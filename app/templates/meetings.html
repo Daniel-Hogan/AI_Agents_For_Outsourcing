@@ -6,7 +6,7 @@
   <title>Meetings</title>
   <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}" />
 </head>
-<body>
+<body class="meetings-page">
   <main class="page">
     {% if messages %}
       <div class="toasts" aria-live="polite" aria-atomic="true">
@@ -16,18 +16,20 @@
       </div>
     {% endif %}
 
-    <section class="card" style="width: min(1080px, 100%);">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
-        <div>
+    <section class="card meetings-card" style="width: min(1080px, 100%);">
+      <div class="meetings-header">
+        <div class="meetings-header-copy">
+          <p class="section-kicker">Plan Confidently</p>
           <h2 style="margin:0 0 6px;">Meetings</h2>
           <p style="margin:0; color: var(--muted); font-size: 14px;">
             Signed in as <strong>{{ email }}</strong>
           </p>
         </div>
 
-        <div style="display:flex; gap:10px;">
-          <a class="btn" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_dashboard') }}">Dashboard</a>
-          <a class="btn" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_availability') }}">Availability</a>
+        <div class="meetings-header-actions">
+          <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_dashboard') }}">Dashboard</a>
+          <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_calendar') }}">Calendar</a>
+          <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_availability') }}">Availability</a>
           <form method="POST" action="{{ url_for('web_logout') }}">
             <button class="btn btn-primary" style="width:auto; padding:10px 12px;" type="submit">Log out</button>
           </form>
@@ -36,136 +38,241 @@
 
       <hr style="border:none; border-top:1px solid var(--border); margin:16px 0;"/>
 
-      <h3 style="margin:0 0 10px;">Create Meeting</h3>
-      <form method="POST" action="{{ url_for('web_meetings_create') }}" style="display:grid; gap:10px;">
-        <input type="hidden" name="q" value="{{ q }}" />
-        <input type="hidden" name="status" value="{{ status }}" />
-        <input type="hidden" name="mine" value="{% if mine %}1{% endif %}" />
-
-        <div style="display:grid; gap:10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
-          <input
-            name="title"
-            value="{{ create_form['title'] }}"
-            placeholder="Meeting title"
-            required
-            style="border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
-          />
-
-          <input
-            name="location"
-            value="{{ create_form['location'] }}"
-            placeholder="Location (optional)"
-            style="border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
-          />
-        </div>
-
-        <div style="display:grid; gap:10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+      <section class="composer-panel">
+        <div class="composer-header">
           <div>
-            <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">Start</label>
-            <input
-              type="datetime-local"
-              name="start_time"
-              value="{{ create_form['start_time'] }}"
-              required
-              style="width:100%; border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
-            />
+            <p class="section-kicker">Create Meeting</p>
+            <h3 class="composer-title">Schedule something without the fiddly parts</h3>
           </div>
-
-          <div>
-            <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">End</label>
-            <input
-              type="datetime-local"
-              name="end_time"
-              value="{{ create_form['end_time'] }}"
-              required
-              style="width:100%; border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
-            />
-          </div>
-        </div>
-
-        <textarea
-          name="invitees"
-          placeholder="Invite users by email (comma, semicolon, or newline separated)"
-          rows="3"
-          style="border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
-        >{{ create_form['invitees'] }}</textarea>
-
-        <div style="border:1px solid var(--border); border-radius:12px; padding:12px;">
-          <p style="margin:0 0 10px; font-size:13px; color:var(--muted);">
-            Recommendation settings used by Check availability
+          <p class="composer-copy">
+            Pick a day from the calendar, choose time in 15-minute steps, and add a place when you want travel-aware warnings.
           </p>
-          <div style="display:grid; gap:10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
-            <div>
-              <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">Window start</label>
-              <input
-                type="datetime-local"
-                name="recommendation_window_start"
-                value="{{ recommendation_form['window_start'] }}"
-                style="width:100%; border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
-              />
-            </div>
-            <div>
-              <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">Window end</label>
-              <input
-                type="datetime-local"
-                name="recommendation_window_end"
-                value="{{ recommendation_form['window_end'] }}"
-                style="width:100%; border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
-              />
-            </div>
-          </div>
-          <div style="margin-top:10px; display:grid; gap:10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
-            <div>
-              <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">Duration (minutes)</label>
-              <input
-                type="number"
-                min="1"
-                max="720"
-                name="recommendation_duration_minutes"
-                value="{{ recommendation_form['duration_minutes'] }}"
-                style="width:100%; border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
-              />
-            </div>
-            <div>
-              <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">Slot interval (minutes)</label>
-              <input
-                type="number"
-                min="1"
-                max="240"
-                name="recommendation_slot_interval_minutes"
-                value="{{ recommendation_form['slot_interval_minutes'] }}"
-                style="width:100%; border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
-              />
-            </div>
-            <div>
-              <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">Max results</label>
-              <input
-                type="number"
-                min="1"
-                max="20"
-                name="recommendation_max_results"
-                value="{{ recommendation_form['max_results'] }}"
-                style="width:100%; border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
-              />
-            </div>
-          </div>
         </div>
 
-        {% if invitable_users %}
-          <p style="margin:0; color: var(--muted); font-size: 12px;">
-            Registered users: {{ invitable_users|join(", ") }}
-          </p>
-        {% endif %}
+        <form method="POST" action="{{ url_for('web_meetings_create') }}" class="meeting-form">
+          <input type="hidden" name="q" value="{{ q }}" />
+          <input type="hidden" name="status" value="{{ status }}" />
+          <input type="hidden" name="mine" value="{% if mine %}1{% endif %}" />
+          <input type="hidden" name="day" value="{{ agenda['selected_day'] }}" />
 
-        <div style="display:flex; gap:10px; flex-wrap:wrap;">
-          <button class="btn" style="width:auto; padding:10px 14px;" type="submit" formaction="{{ url_for('web_meetings_availability') }}">
-            Check availability
-          </button>
-          <button class="btn btn-primary" style="width:auto; padding:10px 14px;" type="submit">
-            Create meeting + invite
-          </button>
-        </div>
-      </form>
+          <div class="form-grid form-grid-wide">
+            <label class="form-field">
+              <span class="field-label">Meeting title</span>
+              <input
+                class="text-input"
+                name="title"
+                value="{{ create_form['title'] }}"
+                placeholder="Weekly team sync"
+                required
+              />
+            </label>
+
+            <label class="form-field">
+              <span class="field-label">
+                Location
+                <span class="field-pill">Optional</span>
+              </span>
+              <div class="location-autocomplete" data-location-autocomplete-root>
+                <input
+                  class="text-input"
+                  name="location"
+                  value="{{ create_form['location'] }}"
+                  placeholder="Search for a place"
+                  autocomplete="off"
+                  data-location-autocomplete-input
+                  data-autocomplete-url="{{ url_for('web_locations_autocomplete') }}"
+                />
+                <input type="hidden" name="location_raw" value="{{ create_form['location_raw'] }}" data-location-raw />
+                <input type="hidden" name="location_latitude" value="{{ create_form['location_latitude'] }}" data-location-latitude />
+                <input type="hidden" name="location_longitude" value="{{ create_form['location_longitude'] }}" data-location-longitude />
+                <div class="location-suggestions" data-location-suggestions hidden></div>
+              </div>
+              <span class="field-help">Choose a suggestion to save exact coordinates for travel checks.</span>
+            </label>
+          </div>
+
+          <div class="form-grid form-grid-wide">
+            <div class="datetime-picker datetime-card" data-datetime-picker data-range-group="meeting" data-range-role="start">
+              <label class="field-label">Start</label>
+              <div data-datetime-native-wrapper>
+                <input
+                  class="text-input"
+                  type="datetime-local"
+                  name="start_time"
+                  value="{{ create_form['start_time'] }}"
+                  required
+                  step="900"
+                  data-datetime-native
+                />
+              </div>
+              <div class="datetime-picker-enhanced" data-datetime-enhanced hidden>
+                <div class="datetime-picker-grid">
+                  <input class="datetime-picker-date" type="date" data-datetime-date />
+                  <div class="datetime-picker-time">
+                    <select aria-label="Start hour" data-datetime-hour></select>
+                    <span>:</span>
+                    <select aria-label="Start minute" data-datetime-minute></select>
+                    <select aria-label="Start period" data-datetime-period></select>
+                  </div>
+                </div>
+                <p class="datetime-picker-hint">15-minute increments</p>
+              </div>
+            </div>
+
+            <div class="datetime-picker datetime-card" data-datetime-picker data-range-group="meeting" data-range-role="end">
+              <label class="field-label">End</label>
+              <div data-datetime-native-wrapper>
+                <input
+                  class="text-input"
+                  type="datetime-local"
+                  name="end_time"
+                  value="{{ create_form['end_time'] }}"
+                  required
+                  step="900"
+                  data-datetime-native
+                />
+              </div>
+              <div class="datetime-picker-enhanced" data-datetime-enhanced hidden>
+                <div class="datetime-picker-grid">
+                  <input class="datetime-picker-date" type="date" data-datetime-date />
+                  <div class="datetime-picker-time">
+                    <select aria-label="End hour" data-datetime-hour></select>
+                    <span>:</span>
+                    <select aria-label="End minute" data-datetime-minute></select>
+                    <select aria-label="End period" data-datetime-period></select>
+                  </div>
+                </div>
+                <p class="datetime-picker-hint">Starts one hour later by default until you change it.</p>
+              </div>
+            </div>
+          </div>
+
+          <label class="form-field">
+            <span class="field-label">Invite people</span>
+            <textarea
+              class="text-area"
+              name="invitees"
+              placeholder="Invite users by email. Commas, semicolons, or new lines all work."
+              rows="3"
+            >{{ create_form['invitees'] }}</textarea>
+          </label>
+
+          <div class="recommendation-panel">
+            <div class="panel-header">
+              <div>
+                <p class="section-kicker">Recommendation Settings</p>
+                <h4 class="panel-title">Used by Check availability</h4>
+              </div>
+              <p class="panel-copy">Tune the search window before asking the app to suggest the best slot.</p>
+            </div>
+
+            <div class="form-grid form-grid-wide">
+              <div class="datetime-picker datetime-card" data-datetime-picker data-range-group="recommendation" data-range-role="start">
+                <label class="field-label">Window start</label>
+                <div data-datetime-native-wrapper>
+                  <input
+                    class="text-input"
+                    type="datetime-local"
+                    name="recommendation_window_start"
+                    value="{{ recommendation_form['window_start'] }}"
+                    step="900"
+                    data-datetime-native
+                  />
+                </div>
+                <div class="datetime-picker-enhanced" data-datetime-enhanced hidden>
+                  <div class="datetime-picker-grid">
+                    <input class="datetime-picker-date" type="date" data-datetime-date />
+                    <div class="datetime-picker-time">
+                      <select aria-label="Recommendation window start hour" data-datetime-hour></select>
+                      <span>:</span>
+                      <select aria-label="Recommendation window start minute" data-datetime-minute></select>
+                      <select aria-label="Recommendation window start period" data-datetime-period></select>
+                    </div>
+                  </div>
+                  <p class="datetime-picker-hint">15-minute increments</p>
+                </div>
+              </div>
+
+              <div class="datetime-picker datetime-card" data-datetime-picker data-range-group="recommendation" data-range-role="end">
+                <label class="field-label">Window end</label>
+                <div data-datetime-native-wrapper>
+                  <input
+                    class="text-input"
+                    type="datetime-local"
+                    name="recommendation_window_end"
+                    value="{{ recommendation_form['window_end'] }}"
+                    step="900"
+                    data-datetime-native
+                  />
+                </div>
+                <div class="datetime-picker-enhanced" data-datetime-enhanced hidden>
+                  <div class="datetime-picker-grid">
+                    <input class="datetime-picker-date" type="date" data-datetime-date />
+                    <div class="datetime-picker-time">
+                      <select aria-label="Recommendation window end hour" data-datetime-hour></select>
+                      <span>:</span>
+                      <select aria-label="Recommendation window end minute" data-datetime-minute></select>
+                      <select aria-label="Recommendation window end period" data-datetime-period></select>
+                    </div>
+                  </div>
+                  <p class="datetime-picker-hint">Defaults to one hour after the window start.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-grid form-grid-triple">
+              <label class="form-field">
+                <span class="field-label">Duration (minutes)</span>
+                <input
+                  class="text-input"
+                  type="number"
+                  min="1"
+                  max="720"
+                  name="recommendation_duration_minutes"
+                  value="{{ recommendation_form['duration_minutes'] }}"
+                />
+              </label>
+              <label class="form-field">
+                <span class="field-label">Slot interval (minutes)</span>
+                <input
+                  class="text-input"
+                  type="number"
+                  min="1"
+                  max="240"
+                  name="recommendation_slot_interval_minutes"
+                  value="{{ recommendation_form['slot_interval_minutes'] }}"
+                />
+              </label>
+              <label class="form-field">
+                <span class="field-label">Max results</span>
+                <input
+                  class="text-input"
+                  type="number"
+                  min="1"
+                  max="20"
+                  name="recommendation_max_results"
+                  value="{{ recommendation_form['max_results'] }}"
+                />
+              </label>
+            </div>
+          </div>
+
+          {% if invitable_users %}
+            <p class="registered-users">
+              Registered users: {{ invitable_users|join(", ") }}
+            </p>
+          {% endif %}
+
+          <div class="form-actions">
+            <button class="btn btn-soft" style="width:auto; padding:10px 14px;" type="submit" formaction="{{ url_for('web_meetings_availability') }}">
+              Check availability
+            </button>
+            <button class="btn btn-primary" style="width:auto; padding:10px 14px;" type="submit">
+              Create meeting + invite
+            </button>
+          </div>
+        </form>
+      </section>
 
       {% if availability_preview %}
         <div style="margin-top:12px; overflow:auto; border:1px solid var(--border); border-radius:12px;">
@@ -235,75 +342,161 @@
 
       <hr style="border:none; border-top:1px solid var(--border); margin:16px 0;"/>
 
-      <form method="GET" action="{{ url_for('web_meetings') }}" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-        <input
-          name="q"
-          value="{{ q }}"
-          placeholder="Search title, location, organizer..."
-          style="flex: 1 1 280px; border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
-        />
+      <section class="agenda-shell">
+        <div class="agenda-toolbar">
+          <div>
+            <p class="section-kicker">Agenda View</p>
+            <h3 class="agenda-title">{{ agenda['selected_day_label'] }}</h3>
+            <p class="agenda-subtitle">
+              {{ agenda['meeting_count_label'] }}
+              {% if agenda['warning_count'] %}
+                &middot; {{ agenda['warning_count_label'] }}
+              {% endif %}
+              {% if agenda['info_count'] %}
+                &middot; {{ agenda['info_count_label'] }}
+              {% endif %}
+            </p>
+          </div>
 
-        <select
-          name="status"
-          style="flex: 0 0 180px; border-radius:10px; border:1px solid var(--border); padding:10px 12px; font-size:14px;"
-        >
-          <option value="" {% if not status %}selected{% endif %}>All statuses</option>
-          <option value="scheduled" {% if status == "scheduled" %}selected{% endif %}>Scheduled</option>
-          <option value="completed" {% if status == "completed" %}selected{% endif %}>Completed</option>
-        </select>
-
-        <label style="display:flex; align-items:center; gap:8px; color: var(--muted); font-size:14px;">
-          <input type="checkbox" name="mine" value="1" {% if mine %}checked{% endif %}/>
-          Only my meetings
-        </label>
-
-        <button class="btn btn-primary" style="width:auto; padding:10px 14px;" type="submit">
-          Apply
-        </button>
-
-        <a class="btn" style="width:auto; padding:10px 14px; text-decoration:none;" href="{{ url_for('web_meetings') }}">
-          Reset
-        </a>
-      </form>
-
-      <div style="margin-top:16px;"></div>
-
-      {% if meetings|length == 0 %}
-        <p style="color: var(--muted); margin: 8px 0 0;">No meetings found.</p>
-      {% else %}
-        <div style="overflow:auto; border:1px solid var(--border); border-radius:12px;">
-          <table style="width:100%; border-collapse:collapse; min-width: 860px;">
-            <thead>
-              <tr style="background:#f9fafb;">
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Title</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Organizer</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Start</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">End</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Location</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for m in meetings %}
-                <tr style="border-top:1px solid var(--border);">
-                  <td style="padding:12px;">
-                    <a href="{{ url_for('web_meeting_detail', meeting_id=m['id']) }}"
-                       style="color: var(--blue); text-decoration:none; font-weight:700;">
-                      {{ m["title"] }}
-                    </a>
-                  </td>
-                  <td style="padding:12px; color: var(--muted); font-size:14px;">{{ m["organizer_email"] }}</td>
-                  <td style="padding:12px; font-size:14px;">{{ m["start_time"] }}</td>
-                  <td style="padding:12px; font-size:14px;">{{ m["end_time"] }}</td>
-                  <td style="padding:12px; color: var(--muted); font-size:14px;">{{ m["location"] or "-" }}</td>
-                  <td style="padding:12px; font-size:14px;">{{ m["status"] }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+          <div class="agenda-nav">
+            <a class="btn btn-soft agenda-nav-btn" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_meetings') }}?{{ agenda['prev_query'] }}">Previous day</a>
+            <a class="btn btn-soft agenda-nav-btn" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_meetings') }}?{{ agenda['today_query'] }}">Today</a>
+            <a class="btn btn-soft agenda-nav-btn" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_meetings') }}?{{ agenda['next_query'] }}">Next day</a>
+          </div>
         </div>
-      {% endif %}
+
+        <form method="GET" action="{{ url_for('web_meetings') }}" class="agenda-filter-form">
+          <label class="form-field agenda-filter-search">
+            <span class="field-label">Search</span>
+            <input
+              class="text-input"
+              name="q"
+              value="{{ q }}"
+              placeholder="Search title, location, organizer..."
+            />
+          </label>
+
+          <label class="form-field">
+            <span class="field-label">Status</span>
+            <select class="text-input" name="status">
+              <option value="" {% if not status %}selected{% endif %}>All statuses</option>
+              <option value="scheduled" {% if status == "scheduled" %}selected{% endif %}>Scheduled</option>
+              <option value="completed" {% if status == "completed" %}selected{% endif %}>Completed</option>
+            </select>
+          </label>
+
+          <label class="form-field">
+            <span class="field-label">Day</span>
+            <input class="text-input" type="date" name="day" value="{{ agenda['selected_day'] }}" />
+          </label>
+
+          <label class="agenda-checkbox">
+            <input type="checkbox" name="mine" value="1" {% if mine %}checked{% endif %}/>
+            <span>Only my meetings</span>
+          </label>
+
+          <div class="agenda-filter-actions">
+            <button class="btn btn-primary" style="width:auto; padding:10px 14px;" type="submit">
+              Apply
+            </button>
+
+            <a class="btn btn-soft" style="width:auto; padding:10px 14px; text-decoration:none;" href="{{ url_for('web_meetings') }}">
+              Reset
+            </a>
+          </div>
+        </form>
+
+        {% if agenda['is_empty'] %}
+          <div class="agenda-empty">
+            <p class="section-kicker">Open Space</p>
+            <h4>No meetings scheduled for {{ agenda['selected_day_label'] }}</h4>
+            <p>
+              Try another day, adjust your filters, or create a meeting above to start filling this agenda.
+            </p>
+          </div>
+        {% else %}
+          <div class="agenda-list">
+            {% for item in agenda['meetings'] %}
+              <article class="agenda-entry">
+                <div class="agenda-time-rail">
+                  <span class="agenda-time-start">{{ item['start_time_label'] }}</span>
+                  <span class="agenda-time-end">Ends {{ item['end_time_label'] }}</span>
+                </div>
+
+                <div class="agenda-card agenda-card-{{ item['primary_severity'] }}">
+                  <div class="agenda-card-header">
+                    <div>
+                      <p class="agenda-card-time">{{ item['time_range_label'] }}</p>
+                      <h4>{{ item['title'] }}</h4>
+                    </div>
+
+                    <div class="agenda-card-badges">
+                      <span class="agenda-status-badge">{{ item['status_label'] }}</span>
+                      {% if item['primary_warning'] %}
+                        <span class="agenda-severity-badge agenda-severity-{{ item['primary_warning']['severity'] }}">
+                          {{ item['primary_warning']['severity']|capitalize }}
+                        </span>
+                      {% endif %}
+                    </div>
+                  </div>
+
+                  <div class="agenda-card-body">
+                    <div class="agenda-meta-row">
+                      <span class="agenda-meta-label">Location</span>
+                      <span class="agenda-meta-value">{{ item['location_label'] }}</span>
+                    </div>
+
+                    <div class="agenda-meta-row">
+                      <span class="agenda-meta-label">Travel</span>
+                      <span class="agenda-meta-value">{{ item['travel_summary'] }}</span>
+                    </div>
+
+                    {% if item['travel_badges'] %}
+                      <div class="agenda-chip-row">
+                        {% for badge in item['travel_badges'] %}
+                          <span class="agenda-chip">{{ badge }}</span>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
+
+                    {% if item['travel_warnings'] %}
+                      <div class="agenda-warnings">
+                        {% for warning in item['travel_warnings'] %}
+                          <div class="agenda-warning agenda-warning-{{ warning['severity'] }}">
+                            <div class="agenda-warning-header">
+                              <span class="agenda-warning-badge">{{ warning['severity']|capitalize }}</span>
+                              {% if warning['available_minutes'] is not none and warning['travel_minutes'] is not none %}
+                                <span class="agenda-warning-detail">{{ warning['available_minutes'] }} min available &middot; {{ warning['travel_minutes'] }} min travel</span>
+                              {% endif %}
+                            </div>
+                            <p>{{ warning['message'] }}</p>
+                          </div>
+                        {% endfor %}
+                      </div>
+                    {% else %}
+                      <div class="agenda-warning agenda-warning-none">
+                        <div class="agenda-warning-header">
+                          <span class="agenda-warning-badge">Clear</span>
+                        </div>
+                        <p>No travel warning for this meeting.</p>
+                      </div>
+                    {% endif %}
+                  </div>
+
+                  <div class="agenda-card-footer">
+                    <span class="agenda-footer-text">{{ item['organizer_email'] }}</span>
+                    <a class="btn btn-soft" style="width:auto; padding:9px 12px; text-decoration:none;" href="{{ url_for('web_meeting_detail', meeting_id=item['id']) }}">
+                      View details
+                    </a>
+                  </div>
+                </div>
+              </article>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </section>
     </section>
   </main>
+  <script src="{{ url_for('static', path='meetings.js') }}"></script>
 </body>
 </html>

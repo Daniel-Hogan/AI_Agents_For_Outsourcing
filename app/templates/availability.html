@@ -26,6 +26,7 @@
         </div>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <a class="btn" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_dashboard') }}">Dashboard</a>
+          <a class="btn" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_calendar') }}">Calendar</a>
           <a class="btn" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_meetings') }}">Meetings</a>
           <form method="POST" action="{{ url_for('web_logout') }}">
             <button class="btn btn-primary" style="width:auto; padding:10px 12px;" type="submit">Log out</button>

@@ -22,10 +22,12 @@ from app.web.routes import router as web_router
 from app.api.auth import router as auth_router
 from app.api.recommendations import router as recommendations_router
 from app.core.config import settings
+from app.db.bootstrap import ensure_runtime_schema
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
 def create_app() -> FastAPI:
+    ensure_runtime_schema()
     api = FastAPI(title="AI Agents API")
 
     api.add_middleware(

@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from app.db.bootstrap import ensure_runtime_schema
 from app.main import create_app
 from app.db.session import SessionLocal
 
@@ -9,6 +10,7 @@ from app.db.session import SessionLocal
 @pytest.fixture(scope="session", autouse=True)
 def _require_db():
     try:
+        ensure_runtime_schema()
         db = SessionLocal()
         db.execute(text("SELECT 1"))
     except Exception:
@@ -33,7 +35,22 @@ def _db_cleanup():
     try:
         db.execute(
             text(
-                "TRUNCATE TABLE refresh_tokens, password_credentials, auth_identities, users RESTART IDENTITY CASCADE"
+                """
+                TRUNCATE TABLE
+                    refresh_tokens,
+                    password_credentials,
+                    auth_identities,
+                    time_slot_preferences,
+                    meeting_attendees,
+                    meetings,
+                    user_calendars,
+                    calendars,
+                    group_memberships,
+                    groups,
+                    location_cache,
+                    users
+                RESTART IDENTITY CASCADE
+                """
             )
         )
         db.commit()

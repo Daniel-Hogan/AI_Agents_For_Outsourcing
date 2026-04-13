@@ -14,6 +14,9 @@ class User(Base):
     last_name: Mapped[str] = mapped_column(Text, nullable=False)
     email: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     phone: Mapped[str | None] = mapped_column(Text)
+    default_location: Mapped[str | None] = mapped_column(Text)
+    default_location_latitude: Mapped[float | None] = mapped_column(nullable=True)
+    default_location_longitude: Mapped[float | None] = mapped_column(nullable=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

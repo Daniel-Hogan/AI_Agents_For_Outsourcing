@@ -1,18 +1,25 @@
+import calendar as month_calendar
 import re
-from datetime import datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
+from pydantic import ValidationError
 
+from app.api.auth import create_password_user_account
 from app.api.recommendations import generate_meeting_time_recommendations
 from app.api.deps import get_db
 from app.core.security import verify_password
 from app.models import PasswordCredential, User
+from app.schemas.auth import RegisterRequest
+from app.schemas.travel import LocationSuggestion
 from app.schemas.recommendations import MeetingRecommendationRequest
+from app.services.travel import autocomplete_locations, get_travel_warning_service
 
 
 router = APIRouter(tags=["web"])
@@ -28,6 +35,14 @@ DAY_OPTIONS = [
     (6, "Saturday"),
 ]
 DAY_NAME_BY_INDEX = {day: name for day, name in DAY_OPTIONS}
+WARNING_SEVERITY_ORDER = {"critical": 0, "caution": 1, "info": 2}
+ORIGIN_SOURCE_LABELS = {
+    "previous_meeting": "From previous meeting",
+    "user_default": "From your default location",
+    "org_default": "From organization default",
+    "unknown": "Origin unresolved",
+}
+CALENDAR_COLOR_TOKENS = ("sky", "amber", "lime", "coral", "violet")
 
 
 def _push_flash(request: Request, category: str, msg: str) -> None:
@@ -58,6 +73,73 @@ def _parse_datetime_local(raw: str) -> datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed
+
+
+def _parse_optional_float(raw: str) -> float | None:
+    value = raw.strip()
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _parse_optional_date(raw: str) -> date | None:
+    value = raw.strip()
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _parse_optional_month(raw: str) -> date | None:
+    value = raw.strip()
+    if not value:
+        return None
+    try:
+        return datetime.strptime(f"{value}-01", "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _build_location_form_state(
+    *,
+    location: str,
+    location_raw: str,
+    location_latitude: str,
+    location_longitude: str,
+) -> dict[str, str]:
+    return {
+        "location": location.strip(),
+        "location_raw": location_raw.strip(),
+        "location_latitude": location_latitude.strip(),
+        "location_longitude": location_longitude.strip(),
+    }
+
+
+def _resolve_submitted_location(
+    *,
+    location: str,
+    location_raw: str,
+    location_latitude: str,
+    location_longitude: str,
+) -> dict[str, object]:
+    display_text = location.strip()
+    raw_text = location_raw.strip() or display_text
+    latitude = _parse_optional_float(location_latitude)
+    longitude = _parse_optional_float(location_longitude)
+    coordinates_present = latitude is not None and longitude is not None
+
+    return {
+        "location": display_text or raw_text or None,
+        "location_raw": raw_text or display_text or None,
+        "location_latitude": latitude if coordinates_present else None,
+        "location_longitude": longitude if coordinates_present else None,
+        "location_is_resolved": coordinates_present,
+    }
 
 
 def _parse_invitee_emails(raw: str) -> tuple[list[str], list[str]]:
@@ -116,16 +198,34 @@ def _list_meetings(db: Session, *, user: User, q: str, status: str, mine: bool):
             m.start_time,
             m.end_time,
             m.location,
+            m.location_latitude,
+            m.location_longitude,
             CASE
                 WHEN m.end_time < NOW() THEN 'completed'
                 ELSE 'scheduled'
-            END AS status
+            END AS status,
+            (
+                EXISTS (
+                    SELECT 1
+                    FROM calendars own_c
+                    WHERE own_c.id = m.calendar_id
+                      AND own_c.owner_type = 'user'
+                      AND own_c.owner_id = :current_user_id
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM meeting_attendees own_ma
+                    WHERE own_ma.meeting_id = m.id
+                      AND own_ma.user_id = :current_user_id
+                      AND own_ma.status IN ('invited', 'accepted')
+                )
+            ) AS is_relevant_to_user
         FROM meetings m
         JOIN calendars c ON c.id = m.calendar_id
         LEFT JOIN users u ON c.owner_type = 'user' AND c.owner_id = u.id
         WHERE 1=1
     """
-    params: dict[str, object] = {}
+    params: dict[str, object] = {"current_user_id": user.id}
 
     if q:
         sql += " AND (m.title ILIKE :q OR COALESCE(m.location, '') ILIKE :q OR COALESCE(u.email, '') ILIKE :q)"
@@ -143,6 +243,312 @@ def _list_meetings(db: Session, *, user: User, q: str, status: str, mine: bool):
 
     sql += " ORDER BY m.start_time ASC"
     return db.execute(text(sql), params).mappings().all()
+
+
+def _coerce_datetime_value(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().replace("Z", "+00:00")
+        if not normalized:
+            return None
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    return None
+
+
+def _format_time_label(value: datetime | None) -> str:
+    if value is None:
+        return "--"
+    return value.strftime("%I:%M %p").lstrip("0")
+
+
+def _format_day_label(value: date) -> str:
+    return value.strftime("%A, %B ") + str(value.day) + value.strftime(", %Y")
+
+
+def _pluralize(count: int, singular: str, plural: str | None = None) -> str:
+    if count == 1:
+        return f"{count} {singular}"
+    return f"{count} {plural or singular + 's'}"
+
+
+def _build_meetings_query_string(*, q: str, status: str, mine: bool, day_value: str) -> str:
+    params: dict[str, str] = {}
+    if q:
+        params["q"] = q
+    if status:
+        params["status"] = status
+    if mine:
+        params["mine"] = "1"
+    if day_value:
+        params["day"] = day_value
+    return urlencode(params)
+
+
+def _shift_month(month_value: date, offset: int) -> date:
+    shifted = month_value.replace(day=1)
+    month_index = shifted.month - 1 + offset
+    year = shifted.year + month_index // 12
+    month = month_index % 12 + 1
+    return date(year, month, 1)
+
+
+def _pick_calendar_color_token(meeting: dict[str, Any]) -> str:
+    severity = str(meeting.get("primary_severity") or "none")
+    if severity == "critical":
+        return "rose"
+    if severity == "caution":
+        return "amber"
+    if severity == "info":
+        return "sky"
+
+    meeting_id = int(meeting.get("id") or 0)
+    return CALENDAR_COLOR_TOKENS[meeting_id % len(CALENDAR_COLOR_TOKENS)]
+
+
+def _build_agenda_item(meeting: dict[str, Any]) -> dict[str, Any]:
+    start_dt = _coerce_datetime_value(meeting.get("start_time"))
+    end_dt = _coerce_datetime_value(meeting.get("end_time"))
+    warnings = [dict(item) for item in meeting.get("travel_warnings") or []]
+    primary_warning = min(
+        warnings,
+        key=lambda warning: WARNING_SEVERITY_ORDER.get(str(warning.get("severity")), 99),
+        default=None,
+    )
+
+    travel_snapshot = next(
+        (
+            warning
+            for warning in warnings
+            if warning.get("travel_minutes") is not None
+            or warning.get("distance_miles") is not None
+            or warning.get("distance_km") is not None
+            or warning.get("origin_source") not in {None, "", "unknown"}
+        ),
+        None,
+    )
+
+    if travel_snapshot:
+        travel_badges: list[str] = []
+        if travel_snapshot.get("travel_minutes") is not None:
+            travel_badges.append(f"{travel_snapshot['travel_minutes']} min travel")
+        if travel_snapshot.get("distance_miles") is not None:
+            travel_badges.append(f"{travel_snapshot['distance_miles']:.1f} mi")
+        elif travel_snapshot.get("distance_km") is not None:
+            travel_badges.append(f"{travel_snapshot['distance_km']:.1f} km")
+        origin_source = str(travel_snapshot.get("origin_source") or "unknown")
+        if origin_source in ORIGIN_SOURCE_LABELS:
+            travel_badges.append(ORIGIN_SOURCE_LABELS[origin_source])
+        travel_summary = " · ".join(travel_badges)
+    elif meeting.get("location"):
+        travel_summary = "No travel warning recorded."
+        travel_badges = []
+    else:
+        travel_summary = "Travel info unavailable without a location."
+        travel_badges = []
+
+    has_actionable_warning = any(
+        warning.get("severity") in {"critical", "caution"} for warning in warnings
+    )
+
+    return {
+        **meeting,
+        "start_dt": start_dt,
+        "end_dt": end_dt,
+        "day_iso": start_dt.date().isoformat() if start_dt else "",
+        "time_range_label": f"{_format_time_label(start_dt)} - {_format_time_label(end_dt)}",
+        "start_time_label": _format_time_label(start_dt),
+        "end_time_label": _format_time_label(end_dt),
+        "location_label": meeting.get("location") or "No location provided",
+        "primary_warning": primary_warning,
+        "primary_severity": primary_warning.get("severity", "none") if primary_warning else "none",
+        "travel_summary": travel_summary,
+        "travel_badges": travel_badges,
+        "has_actionable_warning": has_actionable_warning,
+        "status_label": str(meeting.get("status") or "scheduled").capitalize(),
+    }
+
+
+def _build_agenda_context(
+    meetings: list[dict[str, Any]],
+    *,
+    selected_day_raw: str,
+    q: str,
+    status: str,
+    mine: bool,
+) -> dict[str, Any]:
+    agenda_items = [_build_agenda_item(dict(meeting)) for meeting in meetings]
+    requested_day = _parse_optional_date(selected_day_raw)
+    if requested_day is None:
+        requested_day = next(
+            (item["start_dt"].date() for item in agenda_items if item.get("start_dt") is not None),
+            datetime.now(timezone.utc).date(),
+        )
+
+    selected_day_iso = requested_day.isoformat()
+    selected_meetings = [item for item in agenda_items if item.get("day_iso") == selected_day_iso]
+    warning_count = sum(1 for item in selected_meetings if item["has_actionable_warning"])
+    info_count = sum(
+        1
+        for item in selected_meetings
+        if any(warning.get("severity") == "info" for warning in item.get("travel_warnings") or [])
+    )
+
+    return {
+        "selected_day": selected_day_iso,
+        "selected_day_label": _format_day_label(requested_day),
+        "meeting_count": len(selected_meetings),
+        "warning_count": warning_count,
+        "info_count": info_count,
+        "meeting_count_label": _pluralize(len(selected_meetings), "meeting"),
+        "warning_count_label": _pluralize(warning_count, "travel warning"),
+        "info_count_label": _pluralize(info_count, "routing note"),
+        "meetings": selected_meetings,
+        "is_empty": len(selected_meetings) == 0,
+        "prev_query": _build_meetings_query_string(
+            q=q,
+            status=status,
+            mine=mine,
+            day_value=(requested_day - timedelta(days=1)).isoformat(),
+        ),
+        "next_query": _build_meetings_query_string(
+            q=q,
+            status=status,
+            mine=mine,
+            day_value=(requested_day + timedelta(days=1)).isoformat(),
+        ),
+        "today_query": _build_meetings_query_string(
+            q=q,
+            status=status,
+            mine=mine,
+            day_value=datetime.now(timezone.utc).date().isoformat(),
+        ),
+    }
+
+
+def _build_calendar_context(meetings: list[dict[str, Any]], *, selected_month_raw: str) -> dict[str, Any]:
+    agenda_items = [_build_agenda_item(dict(meeting)) for meeting in meetings]
+    requested_month = _parse_optional_month(selected_month_raw)
+    if requested_month is None:
+        requested_month = next(
+            (
+                item["start_dt"].date().replace(day=1)
+                for item in agenda_items
+                if item.get("start_dt") is not None
+            ),
+            datetime.now(timezone.utc).date().replace(day=1),
+        )
+
+    month_start = requested_month.replace(day=1)
+    month_grid = month_calendar.Calendar(firstweekday=6).monthdatescalendar(month_start.year, month_start.month)
+    visible_start = month_grid[0][0]
+    visible_end = month_grid[-1][-1]
+    today = datetime.now(timezone.utc).date()
+
+    meetings_by_day: dict[str, list[dict[str, Any]]] = {}
+    month_groups: dict[str, list[dict[str, Any]]] = {}
+
+    for item in agenda_items:
+        start_dt = item.get("start_dt")
+        if start_dt is None:
+            continue
+
+        meeting_day = start_dt.date()
+        if not (visible_start <= meeting_day <= visible_end):
+            continue
+
+        calendar_item = {
+            **item,
+            "color_token": _pick_calendar_color_token(item),
+            "detail_url": f"/meetings/{item['id']}",
+            "date_label": _format_day_label(meeting_day),
+            "warning_message": item["primary_warning"]["message"]
+            if item.get("primary_warning")
+            else "No active travel warning for this meeting.",
+        }
+        meetings_by_day.setdefault(meeting_day.isoformat(), []).append(calendar_item)
+
+        if meeting_day.month == month_start.month and meeting_day.year == month_start.year:
+            month_groups.setdefault(meeting_day.isoformat(), []).append(calendar_item)
+
+    for day_items in meetings_by_day.values():
+        day_items.sort(key=lambda item: item["start_dt"] or datetime.max.replace(tzinfo=timezone.utc))
+    for day_items in month_groups.values():
+        day_items.sort(key=lambda item: item["start_dt"] or datetime.max.replace(tzinfo=timezone.utc))
+
+    weeks: list[list[dict[str, Any]]] = []
+    for week in month_grid:
+        week_cells: list[dict[str, Any]] = []
+        for day_value in week:
+            day_iso = day_value.isoformat()
+            day_meetings = meetings_by_day.get(day_iso, [])
+            week_cells.append(
+                {
+                    "date_iso": day_iso,
+                    "day_number": day_value.day,
+                    "is_current_month": day_value.month == month_start.month,
+                    "is_today": day_value == today,
+                    "meetings": day_meetings[:3],
+                    "meeting_count": len(day_meetings),
+                    "more_count": max(0, len(day_meetings) - 3),
+                }
+            )
+        weeks.append(week_cells)
+
+    grouped_meetings = [
+        {"label": _format_day_label(_parse_optional_date(day_iso) or month_start), "meetings": month_groups[day_iso]}
+        for day_iso in sorted(month_groups.keys())
+    ]
+
+    month_meeting_count = sum(len(items) for items in month_groups.values())
+    return {
+        "selected_month": month_start.strftime("%Y-%m"),
+        "month_label": month_start.strftime("%B %Y"),
+        "meeting_count_label": _pluralize(month_meeting_count, "meeting"),
+        "weeks": weeks,
+        "grouped_meetings": grouped_meetings,
+        "is_empty": month_meeting_count == 0,
+        "prev_query": urlencode({"month": _shift_month(month_start, -1).strftime("%Y-%m")}),
+        "next_query": urlencode({"month": _shift_month(month_start, 1).strftime("%Y-%m")}),
+        "today_query": urlencode({"month": datetime.now(timezone.utc).date().replace(day=1).strftime("%Y-%m")}),
+    }
+
+
+def _format_travel_warning_flash(warning: dict[str, Any]) -> str:
+    origin = warning.get("origin_location") or "origin"
+    destination = warning.get("destination_location") or "meeting"
+    travel_minutes = warning.get("travel_minutes")
+    available_minutes = warning.get("available_minutes")
+
+    detail = f"{warning['message']} {origin} -> {destination}."
+    if travel_minutes is not None and available_minutes is not None:
+        detail += f" Estimated travel: {travel_minutes} min; available gap: {available_minutes} min."
+    return detail
+
+
+def _load_meetings_with_travel_context(db: Session, *, user: User, q: str, status: str, mine: bool) -> list[dict[str, Any]]:
+    rows = _list_meetings(db, user=user, q=q, status=status, mine=mine)
+    fallback_rows: list[dict[str, Any]] = []
+    for row in rows:
+        meeting = dict(row)
+        meeting["travel_warnings"] = []
+        fallback_rows.append(meeting)
+
+    try:
+        meetings = get_travel_warning_service().enrich_meetings(db, user=user, meetings=rows, persist=True)
+        db.commit()
+        return meetings
+    except Exception:
+        db.rollback()
+        return fallback_rows
 
 
 def _invitable_users(db: Session, current_user_id: int) -> list[str]:
@@ -358,6 +764,27 @@ def _render_availability_page(
     )
 
 
+def _render_signup_page(
+    request: Request,
+    *,
+    form_data: dict[str, str] | None = None,
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="signup.html",
+        context={
+            "messages": _pop_flashes(request),
+            "form_data": form_data
+            or {
+                "first_name": "",
+                "last_name": "",
+                "email": "",
+                "phone": "",
+            },
+        },
+    )
+
+
 def _render_meetings_page(
     request: Request,
     *,
@@ -366,6 +793,7 @@ def _render_meetings_page(
     q: str,
     status: str,
     mine: bool,
+    selected_day: str = "",
     create_form: dict[str, str] | None = None,
     availability_preview: list[dict[str, Any]] | None = None,
     recommendation_form: dict[str, str] | None = None,
@@ -376,6 +804,9 @@ def _render_meetings_page(
     create_form_value = create_form or {
         "title": "",
         "location": "",
+        "location_raw": "",
+        "location_latitude": "",
+        "location_longitude": "",
         "start_time": "",
         "end_time": "",
         "invitees": "",
@@ -389,15 +820,24 @@ def _render_meetings_page(
     }
     if recommendation_form:
         recommendation_form_value.update(recommendation_form)
+    meetings = _load_meetings_with_travel_context(db, user=user, q=q, status=status, mine=mine)
 
     return templates.TemplateResponse(
         request=request,
         name="meetings.html",
         context={
-            "meetings": _list_meetings(db, user=user, q=q, status=status, mine=mine),
+            "meetings": meetings,
+            "agenda": _build_agenda_context(
+                meetings,
+                selected_day_raw=selected_day,
+                q=q,
+                status=status,
+                mine=mine,
+            ),
             "q": q,
             "status": status,
             "mine": mine,
+            "selected_day": selected_day,
             "email": user.email,
             "messages": _pop_flashes(request),
             "create_form": create_form_value,
@@ -411,6 +851,25 @@ def _render_meetings_page(
     )
 
 
+def _render_calendar_page(
+    request: Request,
+    *,
+    db: Session,
+    user: User,
+    selected_month: str = "",
+):
+    meetings = _load_meetings_with_travel_context(db, user=user, q="", status="", mine=False)
+    return templates.TemplateResponse(
+        request=request,
+        name="calendar.html",
+        context={
+            "email": user.email,
+            "messages": _pop_flashes(request),
+            "calendar_view": _build_calendar_context(meetings, selected_month_raw=selected_month),
+        },
+    )
+
+
 @router.get("/", name="web_index")
 def index(request: Request):
     return templates.TemplateResponse(
@@ -418,6 +877,57 @@ def index(request: Request):
         name="index.html",
         context={"messages": _pop_flashes(request)},
     )
+
+
+@router.get("/signup", name="web_signup_page")
+def signup_page(request: Request):
+    return _render_signup_page(request)
+
+
+@router.post("/signup", name="web_signup")
+def signup(
+    request: Request,
+    first_name: str = Form(""),
+    last_name: str = Form(""),
+    email: str = Form(""),
+    phone: str = Form(""),
+    password: str = Form(""),
+    confirm_password: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    form_data = {
+        "first_name": first_name.strip(),
+        "last_name": last_name.strip(),
+        "email": email.strip(),
+        "phone": phone.strip(),
+    }
+
+    if password != confirm_password:
+        _push_flash(request, "error", "Passwords do not match.")
+        return _render_signup_page(request, form_data=form_data)
+
+    try:
+        payload = RegisterRequest(
+            first_name=first_name.strip(),
+            last_name=last_name.strip(),
+            email=email.strip().lower(),
+            phone=phone.strip() or None,
+            password=password,
+        )
+    except ValidationError as exc:
+        first_error = exc.errors()[0]["msg"] if exc.errors() else "Use valid signup details."
+        _push_flash(request, "error", str(first_error))
+        return _render_signup_page(request, form_data=form_data)
+
+    try:
+        user = create_password_user_account(db, payload=payload)
+    except HTTPException as exc:
+        _push_flash(request, "error", str(exc.detail))
+        return _render_signup_page(request, form_data=form_data)
+
+    request.session["user_id"] = user.id
+    _push_flash(request, "success", f"Account created. Signed in as {user.email}")
+    return RedirectResponse(url="/meetings", status_code=303)
 
 
 @router.post("/login", name="web_login")
@@ -437,6 +947,23 @@ def web_login(request: Request, email: str = Form(...), password: str = Form(...
     request.session["user_id"] = user.id
     _push_flash(request, "success", f"Signed in as {user.email}")
     return RedirectResponse(url="/meetings", status_code=303)
+
+
+@router.get("/locations/autocomplete", name="web_locations_autocomplete")
+def locations_autocomplete(request: Request, q: str = "", db: Session = Depends(get_db)):
+    user = _current_user(request, db)
+    if user is None:
+        return JSONResponse(status_code=401, content={"suggestions": [], "status": "unauthorized"})
+
+    query = q.strip()
+    if len(query) < 3:
+        return {"suggestions": [], "status": "idle"}
+
+    suggestions = [
+        LocationSuggestion(label=item.label, latitude=item.latitude, longitude=item.longitude).model_dump(mode="python")
+        for item in autocomplete_locations(query, size=5)
+    ]
+    return {"suggestions": suggestions, "status": "ok"}
 
 
 @router.get("/dashboard", name="web_dashboard")
@@ -459,6 +986,15 @@ def availability_page(request: Request, db: Session = Depends(get_db)):
         _push_flash(request, "error", "Please sign in first.")
         return RedirectResponse(url="/", status_code=303)
     return _render_availability_page(request, db=db, user=user)
+
+
+@router.get("/calendar", name="web_calendar")
+def calendar_page(request: Request, db: Session = Depends(get_db), month: str = ""):
+    user = _current_user(request, db)
+    if user is None:
+        _push_flash(request, "error", "Please sign in first.")
+        return RedirectResponse(url="/", status_code=303)
+    return _render_calendar_page(request, db=db, user=user, selected_month=month.strip())
 
 
 @router.post("/availability/add", name="web_availability_add")
@@ -575,6 +1111,7 @@ def meetings(
     q: str = "",
     status: str = "",
     mine: str = "",
+    day: str = "",
 ):
     user = _current_user(request, db)
     if user is None:
@@ -588,6 +1125,7 @@ def meetings(
         q=q.strip(),
         status=status.strip().lower(),
         mine=mine.strip() == "1",
+        selected_day=day.strip(),
     )
 
 
@@ -596,6 +1134,9 @@ def meetings_availability(
     request: Request,
     title: str = Form(""),
     location: str = Form(""),
+    location_raw: str = Form(""),
+    location_latitude: str = Form(""),
+    location_longitude: str = Form(""),
     start_time: str = Form(""),
     end_time: str = Form(""),
     invitees: str = Form(""),
@@ -607,6 +1148,7 @@ def meetings_availability(
     q: str = Form(""),
     status: str = Form(""),
     mine: str = Form(""),
+    day: str = Form(""),
     db: Session = Depends(get_db),
 ):
     user = _current_user(request, db)
@@ -617,9 +1159,15 @@ def meetings_availability(
     q_norm = q.strip()
     status_norm = status.strip().lower()
     mine_enabled = mine.strip() == "1"
+    selected_day = day.strip()
     create_form = {
         "title": title.strip(),
-        "location": location.strip(),
+        **_build_location_form_state(
+            location=location,
+            location_raw=location_raw,
+            location_latitude=location_latitude,
+            location_longitude=location_longitude,
+        ),
         "start_time": start_time.strip(),
         "end_time": end_time.strip(),
         "invitees": invitees.strip(),
@@ -644,6 +1192,7 @@ def meetings_availability(
             q=q_norm,
             status=status_norm,
             mine=mine_enabled,
+            selected_day=selected_day,
             create_form=create_form,
             recommendation_form=recommendation_form,
         )
@@ -657,6 +1206,7 @@ def meetings_availability(
             q=q_norm,
             status=status_norm,
             mine=mine_enabled,
+            selected_day=selected_day,
             create_form=create_form,
             recommendation_form=recommendation_form,
         )
@@ -673,6 +1223,7 @@ def meetings_availability(
             q=q_norm,
             status=status_norm,
             mine=mine_enabled,
+            selected_day=selected_day,
             create_form=create_form,
             recommendation_form=recommendation_form,
         )
@@ -713,6 +1264,7 @@ def meetings_availability(
         q=q_norm,
         status=status_norm,
         mine=mine_enabled,
+        selected_day=selected_day,
         create_form=create_form,
         availability_preview=preview,
         recommendation_form=recommendation_form,
@@ -727,12 +1279,16 @@ def meetings_create(
     request: Request,
     title: str = Form(""),
     location: str = Form(""),
+    location_raw: str = Form(""),
+    location_latitude: str = Form(""),
+    location_longitude: str = Form(""),
     start_time: str = Form(""),
     end_time: str = Form(""),
     invitees: str = Form(""),
     q: str = Form(""),
     status: str = Form(""),
     mine: str = Form(""),
+    day: str = Form(""),
     db: Session = Depends(get_db),
 ):
     user = _current_user(request, db)
@@ -743,9 +1299,15 @@ def meetings_create(
     q_norm = q.strip()
     status_norm = status.strip().lower()
     mine_enabled = mine.strip() == "1"
+    selected_day = day.strip()
     create_form = {
         "title": title.strip(),
-        "location": location.strip(),
+        **_build_location_form_state(
+            location=location,
+            location_raw=location_raw,
+            location_latitude=location_latitude,
+            location_longitude=location_longitude,
+        ),
         "start_time": start_time.strip(),
         "end_time": end_time.strip(),
         "invitees": invitees.strip(),
@@ -760,6 +1322,7 @@ def meetings_create(
             q=q_norm,
             status=status_norm,
             mine=mine_enabled,
+            selected_day=selected_day,
             create_form=create_form,
         )
 
@@ -775,6 +1338,7 @@ def meetings_create(
             q=q_norm,
             status=status_norm,
             mine=mine_enabled,
+            selected_day=selected_day,
             create_form=create_form,
         )
 
@@ -787,6 +1351,7 @@ def meetings_create(
             q=q_norm,
             status=status_norm,
             mine=mine_enabled,
+            selected_day=selected_day,
             create_form=create_form,
         )
 
@@ -794,20 +1359,53 @@ def meetings_create(
     if invalid_emails:
         _push_flash(request, "error", f"Ignored invalid emails: {', '.join(invalid_emails)}")
 
+    resolved_location = _resolve_submitted_location(
+        location=location,
+        location_raw=location_raw,
+        location_latitude=location_latitude,
+        location_longitude=location_longitude,
+    )
     calendar_id = _get_or_create_personal_calendar(db, user)
     meeting_id = int(
         db.execute(
             text(
                 """
-                INSERT INTO meetings (calendar_id, title, location, start_time, end_time, capacity, setup_minutes, cleanup_minutes)
-                VALUES (:calendar_id, :title, :location, :start_time, :end_time, NULL, 0, 0)
+                INSERT INTO meetings (
+                    calendar_id,
+                    title,
+                    location,
+                    location_raw,
+                    location_latitude,
+                    location_longitude,
+                    start_time,
+                    end_time,
+                    capacity,
+                    setup_minutes,
+                    cleanup_minutes
+                )
+                VALUES (
+                    :calendar_id,
+                    :title,
+                    :location,
+                    :location_raw,
+                    :location_latitude,
+                    :location_longitude,
+                    :start_time,
+                    :end_time,
+                    NULL,
+                    0,
+                    0
+                )
                 RETURNING id
                 """
             ),
             {
                 "calendar_id": calendar_id,
                 "title": title.strip(),
-                "location": location.strip() or None,
+                "location": resolved_location["location"],
+                "location_raw": resolved_location["location_raw"],
+                "location_latitude": resolved_location["location_latitude"],
+                "location_longitude": resolved_location["location_longitude"],
                 "start_time": start_dt,
                 "end_time": end_dt,
             },
@@ -847,12 +1445,37 @@ def meetings_create(
         if invitee.id != user.id:
             invited_count += 1
 
+    travel_warnings = get_travel_warning_service().evaluate_meeting(
+        db,
+        user=user,
+        meeting={
+            "id": meeting_id,
+            "title": title.strip(),
+            "start_time": start_dt,
+            "end_time": end_dt,
+            "location": resolved_location["location"],
+            "location_latitude": resolved_location["location_latitude"],
+            "location_longitude": resolved_location["location_longitude"],
+            "is_relevant_to_user": True,
+        },
+        persist=True,
+    )
     db.commit()
 
     summary = f"Meeting created. Invited {invited_count} user(s)."
     if missing_users:
         summary += f" Not found: {', '.join(missing_users)}."
     _push_flash(request, "success", summary)
+    first_actionable_warning = next(
+        (warning for warning in travel_warnings if warning.severity in {"critical", "caution"}),
+        None,
+    )
+    if first_actionable_warning is not None:
+        _push_flash(
+            request,
+            "error" if first_actionable_warning.severity == "critical" else "warning",
+            _format_travel_warning_flash(first_actionable_warning.model_dump(mode="python")),
+        )
     return RedirectResponse(url=f"/meetings/{meeting_id}", status_code=303)
 
 

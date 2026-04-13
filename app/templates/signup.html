@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Create Account</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}" />
+</head>
+<body>
+  <main class="page">
+    {% if messages %}
+      <div class="toasts" aria-live="polite" aria-atomic="true">
+        {% for item in messages %}
+          <div class="toast toast-{{ item['category'] }}">{{ item["message"] }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <section class="hero">
+      <h1>Create your account</h1>
+      <p>
+        Set up a simple account to manage meetings, availability,
+        and travel-time warnings.
+      </p>
+    </section>
+
+    <section class="card" aria-label="Signup card">
+      <form class="email-row" method="POST" action="{{ url_for('web_signup') }}">
+        <div class="input-grid">
+          <div class="input-wrap">
+            <input type="text" name="first_name" value="{{ form_data['first_name'] }}" placeholder="First name" required />
+          </div>
+          <div class="input-wrap">
+            <input type="text" name="last_name" value="{{ form_data['last_name'] }}" placeholder="Last name" required />
+          </div>
+        </div>
+
+        <div class="input-wrap">
+          <input type="email" name="email" value="{{ form_data['email'] }}" placeholder="name@company.com" required />
+        </div>
+
+        <div class="input-wrap">
+          <input type="tel" name="phone" value="{{ form_data['phone'] }}" placeholder="Phone (optional)" />
+        </div>
+
+        <div class="input-wrap">
+          <input type="password" name="password" placeholder="Password" minlength="8" required />
+        </div>
+
+        <div class="input-wrap">
+          <input type="password" name="confirm_password" placeholder="Confirm password" minlength="8" required />
+        </div>
+
+        <button class="btn btn-primary" type="submit">
+          Create account
+          <span class="arrow">-&gt;</span>
+        </button>
+      </form>
+
+      <div class="privacy">
+        <span class="lock">
+          <svg width="16" height="16" viewBox="0 0 24 24">
+            <path fill="currentColor" d="M12 1a5 5 0 0 0-5 5v4H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm-3 9V6a3 3 0 1 1 6 0v4H9z"/>
+          </svg>
+        </span>
+        <p>
+          Use your work email so your meeting schedule stays easy to manage.
+        </p>
+      </div>
+
+      <div class="signup">
+        <span>Already have an account?</span>
+        <a href="{{ url_for('web_index') }}">Sign in</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -5,6 +5,9 @@ CREATE TABLE users (
   last_name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   phone TEXT,
+  default_location TEXT,
+  default_location_latitude DOUBLE PRECISION,
+  default_location_longitude DOUBLE PRECISION,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -84,11 +87,23 @@ CREATE TABLE meetings (
   calendar_id INTEGER NOT NULL REFERENCES calendars(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   location TEXT,
+  location_raw TEXT,
+  location_latitude DOUBLE PRECISION,
+  location_longitude DOUBLE PRECISION,
   start_time TIMESTAMPTZ NOT NULL,
   end_time TIMESTAMPTZ NOT NULL,
   capacity INTEGER,
   setup_minutes INTEGER DEFAULT 0,
   cleanup_minutes INTEGER DEFAULT 0
+);
+
+CREATE TABLE location_cache (
+  location_key TEXT PRIMARY KEY,
+  location_label TEXT NOT NULL,
+  latitude DOUBLE PRECISION NOT NULL,
+  longitude DOUBLE PRECISION NOT NULL,
+  provider TEXT NOT NULL DEFAULT 'openrouteservice',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Here we relate the users with the meeting 

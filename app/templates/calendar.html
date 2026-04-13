@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Calendar</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}" />
+</head>
+<body class="calendar-page">
+  <main class="calendar-shell">
+    {% if messages %}
+      <div class="toasts" aria-live="polite" aria-atomic="true">
+        {% for item in messages %}
+          <div class="toast toast-{{ item['category'] }}">{{ item["message"] }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <section class="calendar-board">
+      <div class="calendar-topbar">
+        <div>
+          <p class="calendar-kicker">Monthly Calendar</p>
+          <h1>{{ calendar_view['month_label'] }}</h1>
+          <p class="calendar-topbar-copy">
+            Signed in as <strong>{{ email }}</strong>. {{ calendar_view['meeting_count_label'] }} scheduled this month.
+          </p>
+        </div>
+
+        <div class="calendar-topbar-actions">
+          <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_dashboard') }}">Dashboard</a>
+          <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_meetings') }}">Agenda</a>
+          <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_availability') }}">Availability</a>
+          <form method="POST" action="{{ url_for('web_logout') }}">
+            <button class="btn btn-primary" style="width:auto; padding:10px 12px;" type="submit">Log out</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="calendar-layout">
+        <section class="calendar-panel">
+          <div class="calendar-panel-header">
+            <div>
+              <p class="calendar-kicker">Overview</p>
+              <h2>{{ calendar_view['month_label'] }}</h2>
+              <p class="calendar-panel-copy">Click any meeting to pop open its details card.</p>
+            </div>
+
+            <div class="calendar-month-nav">
+              <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_calendar') }}?{{ calendar_view['prev_query'] }}">Previous</a>
+              <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_calendar') }}?{{ calendar_view['today_query'] }}">Today</a>
+              <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_calendar') }}?{{ calendar_view['next_query'] }}">Next</a>
+            </div>
+          </div>
+
+          <form method="GET" action="{{ url_for('web_calendar') }}" class="calendar-month-form">
+            <label class="form-field">
+              <span class="field-label">Jump to month</span>
+              <input class="text-input" type="month" name="month" value="{{ calendar_view['selected_month'] }}" />
+            </label>
+            <button class="btn btn-primary" style="width:auto; padding:10px 14px;" type="submit">Go</button>
+          </form>
+
+          <div class="calendar-grid-head">
+            <span>Sunday</span>
+            <span>Monday</span>
+            <span>Tuesday</span>
+            <span>Wednesday</span>
+            <span>Thursday</span>
+            <span>Friday</span>
+            <span>Saturday</span>
+          </div>
+
+          <div class="calendar-grid">
+            {% for week in calendar_view['weeks'] %}
+              {% for day in week %}
+                <article class="calendar-day{% if not day['is_current_month'] %} calendar-day-muted{% endif %}{% if day['is_today'] %} calendar-day-today{% endif %}">
+                  <div class="calendar-day-header">
+                    <span class="calendar-day-number">{{ day['day_number'] }}</span>
+                    {% if day['meeting_count'] %}
+                      <span class="calendar-day-count">{{ day['meeting_count'] }}</span>
+                    {% endif %}
+                  </div>
+
+                  <div class="calendar-day-events">
+                    {% for meeting in day['meetings'] %}
+                      <button
+                        type="button"
+                        class="calendar-event calendar-event-{{ meeting['color_token'] }}"
+                        data-calendar-open
+                        data-title="{{ meeting['title']|e }}"
+                        data-date-label="{{ meeting['date_label']|e }}"
+                        data-time-range="{{ meeting['time_range_label']|e }}"
+                        data-location="{{ meeting['location_label']|e }}"
+                        data-organizer="{{ meeting['organizer_email']|e }}"
+                        data-status="{{ meeting['status_label']|e }}"
+                        data-travel="{{ meeting['travel_summary']|e }}"
+                        data-warning-message="{{ meeting['warning_message']|e }}"
+                        data-warning-severity="{{ meeting['primary_severity']|e }}"
+                        data-detail-url="{{ meeting['detail_url']|e }}"
+                      >
+                        <span class="calendar-event-time">{{ meeting['start_time_label'] }}</span>
+                        <span class="calendar-event-title">{{ meeting['title'] }}</span>
+                      </button>
+                    {% endfor %}
+
+                    {% if day['more_count'] %}
+                      <p class="calendar-day-more">+{{ day['more_count'] }} more</p>
+                    {% endif %}
+                  </div>
+                </article>
+              {% endfor %}
+            {% endfor %}
+          </div>
+        </section>
+
+        <aside class="calendar-sidebar">
+          <div class="calendar-sidebar-header">
+            <p class="calendar-kicker">This Month</p>
+            <h3>{{ calendar_view['meeting_count_label'] }}</h3>
+          </div>
+
+          {% if calendar_view['is_empty'] %}
+            <div class="calendar-sidebar-empty">
+              <h4>No meetings scheduled</h4>
+              <p>This month is open. Create a meeting from the agenda page and it will show up here.</p>
+            </div>
+          {% else %}
+            <div class="calendar-sidebar-list">
+              {% for group in calendar_view['grouped_meetings'] %}
+                <section class="calendar-sidebar-group">
+                  <p class="calendar-sidebar-label">{{ group['label'] }}</p>
+                  <div class="calendar-sidebar-cards">
+                    {% for meeting in group['meetings'] %}
+                      <button
+                        type="button"
+                        class="calendar-list-card calendar-list-card-{{ meeting['color_token'] }}"
+                        data-calendar-open
+                        data-title="{{ meeting['title']|e }}"
+                        data-date-label="{{ meeting['date_label']|e }}"
+                        data-time-range="{{ meeting['time_range_label']|e }}"
+                        data-location="{{ meeting['location_label']|e }}"
+                        data-organizer="{{ meeting['organizer_email']|e }}"
+                        data-status="{{ meeting['status_label']|e }}"
+                        data-travel="{{ meeting['travel_summary']|e }}"
+                        data-warning-message="{{ meeting['warning_message']|e }}"
+                        data-warning-severity="{{ meeting['primary_severity']|e }}"
+                        data-detail-url="{{ meeting['detail_url']|e }}"
+                      >
+                        <span class="calendar-list-card-time">{{ meeting['time_range_label'] }}</span>
+                        <strong>{{ meeting['title'] }}</strong>
+                        <span class="calendar-list-card-location">{{ meeting['location_label'] }}</span>
+                      </button>
+                    {% endfor %}
+                  </div>
+                </section>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <div class="calendar-modal-backdrop" data-calendar-modal hidden>
+    <div class="calendar-modal" role="dialog" aria-modal="true" aria-labelledby="calendar-modal-title">
+      <button type="button" class="calendar-modal-close" data-calendar-close aria-label="Close meeting details">×</button>
+      <p class="calendar-modal-date" data-calendar-modal-date></p>
+      <h2 id="calendar-modal-title" data-calendar-modal-title></h2>
+      <p class="calendar-modal-time" data-calendar-modal-time></p>
+
+      <div class="calendar-modal-meta">
+        <div class="calendar-modal-row">
+          <span>Location</span>
+          <p data-calendar-modal-location></p>
+        </div>
+        <div class="calendar-modal-row">
+          <span>Organizer</span>
+          <p data-calendar-modal-organizer></p>
+        </div>
+        <div class="calendar-modal-row">
+          <span>Status</span>
+          <p data-calendar-modal-status></p>
+        </div>
+        <div class="calendar-modal-row">
+          <span>Travel</span>
+          <p data-calendar-modal-travel></p>
+        </div>
+      </div>
+
+      <div class="calendar-modal-warning" data-calendar-modal-warning>
+        <span class="calendar-modal-warning-badge" data-calendar-modal-warning-badge></span>
+        <p data-calendar-modal-warning-message></p>
+      </div>
+
+      <div class="calendar-modal-actions">
+        <a class="btn btn-primary" style="width:auto; padding:10px 14px; text-decoration:none;" data-calendar-modal-link href="#">Open details</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', path='calendar.js') }}"></script>
+</body>
+</html>

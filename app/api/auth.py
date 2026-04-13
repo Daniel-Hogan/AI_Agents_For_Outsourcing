@@ -30,6 +30,42 @@ from app.schemas.auth import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def create_password_user_account(db: Session, *, payload: RegisterRequest) -> User:
+    email_norm = payload.email.strip().lower()
+
+    user = User(
+        first_name=payload.first_name.strip(),
+        last_name=payload.last_name.strip(),
+        email=email_norm,
+        phone=payload.phone.strip() if payload.phone else None,
+    )
+    db.add(user)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Email already in use")
+
+    db.add(
+        PasswordCredential(
+            user_id=user.id,
+            password_hash=hash_password(payload.password),
+        )
+    )
+    db.add(
+        AuthIdentity(
+            user_id=user.id,
+            provider="password",
+            provider_subject=email_norm,
+            email=email_norm,
+            email_verified=False,
+        )
+    )
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def _set_refresh_cookie(resp: Response, refresh_token: str) -> None:
     resp.set_cookie(
         key="refresh_token",
@@ -73,39 +109,7 @@ def _issue_tokens(db: Session, *, user: User, request: Request, response: Respon
 
 @router.post("/register", response_model=TokenResponse)
 def register(payload: RegisterRequest, request: Request, response: Response, db: Session = Depends(get_db)):
-    email_norm = payload.email.strip().lower()
-
-    user = User(
-        first_name=payload.first_name.strip(),
-        last_name=payload.last_name.strip(),
-        email=email_norm,
-        phone=payload.phone.strip() if payload.phone else None,
-    )
-    db.add(user)
-    try:
-        db.flush()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="Email already in use")
-
-    db.add(
-        PasswordCredential(
-            user_id=user.id,
-            password_hash=hash_password(payload.password),
-        )
-    )
-    db.add(
-        AuthIdentity(
-            user_id=user.id,
-            provider="password",
-            provider_subject=email_norm,
-            email=email_norm,
-            email_verified=False,
-        )
-    )
-    db.commit()
-    db.refresh(user)
-
+    user = create_password_user_account(db, payload=payload)
     return _issue_tokens(db, user=user, request=request, response=response)
 
 

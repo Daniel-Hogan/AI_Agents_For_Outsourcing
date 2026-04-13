@@ -42,3 +42,28 @@ def test_login_invalid_password(client):
 
     r = client.post("/auth/login", json={"email": "grace@example.com", "password": "wrong"})
     assert r.status_code == 401
+
+
+def test_web_signup_creates_account_and_redirects_to_meetings(client):
+    r = client.get("/signup")
+    assert r.status_code == 200
+    assert "Create your account" in r.text
+
+    r = client.post(
+        "/signup",
+        data={
+            "first_name": "Linus",
+            "last_name": "Torvalds",
+            "email": "linus@example.com",
+            "phone": "",
+            "password": "supersecret123",
+            "confirm_password": "supersecret123",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == "/meetings"
+
+    meetings_page = client.get("/meetings")
+    assert meetings_page.status_code == 200
+    assert "Signed in as <strong>linus@example.com</strong>" in meetings_page.text
