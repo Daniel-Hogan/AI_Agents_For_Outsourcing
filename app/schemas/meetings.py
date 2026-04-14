@@ -16,6 +16,7 @@ class MeetingBase(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str | None = None
     location: str | None = None
+    meeting_type: Literal["in_person", "virtual"] = "in_person"
     color: str | None = "#3498db"
     start_time: datetime
     end_time: datetime
@@ -38,6 +39,7 @@ class MeetingUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
     location: str | None = None
+    meeting_type: Literal["in_person", "virtual"] | None = None
     color: str | None = None
     start_time: datetime | None = None
     end_time: datetime | None = None
@@ -63,6 +65,7 @@ class MeetingResponse(BaseModel):
     title: str
     description: str | None
     location: str | None
+    meeting_type: str
     color: str
     start_time: datetime
     end_time: datetime

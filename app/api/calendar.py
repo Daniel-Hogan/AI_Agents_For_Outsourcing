@@ -57,15 +57,29 @@ def get_events(
     calendar_id = get_or_create_user_calendar(current_user.id, db)
 
     events = db.execute(text("""
-        SELECT DISTINCT m.id, m.title, m.location, COALESCE(m.color, '#3498db') AS color, m.start_time, m.end_time
+        SELECT
+            m.id,
+            m.title,
+            m.location,
+            CASE
+                WHEN COUNT(ma_all.user_id) FILTER (WHERE ma_all.status = 'maybe') > 0
+                    THEN '#facc15'
+                WHEN COUNT(ma_all.user_id) FILTER (WHERE ma_all.status = 'declined') > 0
+                    AND me.status = 'accepted'
+                    THEN '#ef4444'
+                ELSE COALESCE(m.color, '#3498db')
+            END AS color,
+            m.start_time,
+            m.end_time,
+            me.status AS current_user_status
         FROM meetings m
+        LEFT JOIN meeting_attendees ma_all ON ma_all.meeting_id = m.id
+        LEFT JOIN meeting_attendees me ON me.meeting_id = m.id AND me.user_id = :user_id
         WHERE
             COALESCE(m.status, 'confirmed') <> 'cancelled'
             AND (
-                -- Meetings the user owns
                 m.calendar_id = :calendar_id
                 OR
-                -- Meetings the user accepted or said maybe to
                 EXISTS (
                     SELECT 1 FROM meeting_attendees ma
                     WHERE ma.meeting_id = m.id
@@ -73,6 +87,7 @@ def get_events(
                       AND ma.status IN ('accepted', 'maybe')
                 )
             )
+        GROUP BY m.id, m.title, m.location, m.color, m.start_time, m.end_time, me.status
         ORDER BY m.start_time ASC
     """), {
         "calendar_id": calendar_id,

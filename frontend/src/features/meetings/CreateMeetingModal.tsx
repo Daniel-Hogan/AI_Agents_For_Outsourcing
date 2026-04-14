@@ -43,16 +43,15 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
+  const [meetingType, setMeetingType] = useState<"in_person" | "virtual">("in_person");
   const [date, setDate] = useState("");
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
   const [attendeeEmails, setAttendeeEmails] = useState("");
-  
-  // State for recommended slots
+
   const [recommendedSlots, setRecommendedSlots] = useState<MeetingRecommendation[] | null>(null);
   const [loadingSlots, setLoadingSlots] = useState(false);
 
-  // Pre-fill today's date when modal opens
   useEffect(() => {
     if (isOpen) {
       const now = new Date();
@@ -84,6 +83,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
         title: title.trim(),
         description: description.trim() || undefined,
         location: location.trim() || undefined,
+        meeting_type: meetingType,
         color: DEFAULT_COLOR,
         start_time: toDateTimeString(date, startTime),
         end_time: toDateTimeString(date, endTime),
@@ -93,13 +93,13 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
           .filter(Boolean),
       });
 
-      // Reset form and close
       setTitle("");
       setDescription("");
       setLocation("");
+      setMeetingType("in_person");
       setAttendeeEmails("");
-      onSuccess(); // Refresh the list
-      onClose();   // Close modal
+      onSuccess();
+      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create meeting.");
     } finally {
@@ -158,69 +158,105 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
         <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">Manually block out time on the calendar.</p>
 
         <form onSubmit={handleCreateMeeting} className="grid gap-4">
+
+          {/* Virtual / In Person Toggle */}
+          <div className="flex rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => { setMeetingType("in_person"); setLocation(""); }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${
+                meetingType === "in_person"
+                  ? "bg-blue-600 text-white"
+                  : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+              }`}
+            >
+              🏢 In Person
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMeetingType("virtual"); setLocation(""); }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${
+                meetingType === "virtual"
+                  ? "bg-purple-600 text-white"
+                  : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+              }`}
+            >
+              💻 Virtual
+            </button>
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2">
             <input
               value={title}
-              onChange={(event) => setTitle(event.target.value)}
+              onChange={(e) => setTitle(e.target.value)}
               placeholder="Meeting title"
               className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
             />
-            <input
-              value={location}
-              onChange={(event) => setLocation(event.target.value)}
-              placeholder="Location or meeting link"
-              className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-            />
+            {meetingType === "in_person" ? (
+              <input
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Address or room"
+                className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+              />
+            ) : (
+              <input
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Meeting link (Zoom, Teams, etc.)"
+                className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+              />
+            )}
           </div>
 
           <textarea
             value={description}
-            onChange={(event) => setDescription(event.target.value)}
+            onChange={(e) => setDescription(e.target.value)}
             placeholder="Description"
             rows={3}
             className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
           />
 
           <div className="grid gap-4 md:grid-cols-3">
-              <input
-                type="date"
-                value={date}
-                onChange={(event) => {
-                  setDate(event.target.value);
-                  setRecommendedSlots(null);
-                  setSlotError("");
-                }}
-                className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white [color-scheme:dark]"
-              />
-              <input
-                type="time"
-                value={startTime}
-                onChange={(event) => {
-                  setStartTime(event.target.value);
-                  setRecommendedSlots(null);
-                  setSlotError("");
-                }}
-                className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white [color-scheme:dark]"
-              />
-              <input
-                type="time"
-                value={endTime}
-                onChange={(event) => {
-                  setEndTime(event.target.value);
-                  setRecommendedSlots(null);
-                  setSlotError("");
-                }}
-                className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white [color-scheme:dark]"
-              />
+            <input
+              type="date"
+              value={date}
+              onChange={(event) => {
+                setDate(event.target.value);
+                setRecommendedSlots(null);
+                setSlotError("");
+              }}
+              className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white [color-scheme:dark]"
+            />
+            <input
+              type="time"
+              value={startTime}
+              onChange={(event) => {
+                setStartTime(event.target.value);
+                setRecommendedSlots(null);
+                setSlotError("");
+              }}
+              className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white [color-scheme:dark]"
+            />
+            <input
+              type="time"
+              value={endTime}
+              onChange={(event) => {
+                setEndTime(event.target.value);
+                setRecommendedSlots(null);
+                setSlotError("");
+              }}
+              className="rounded-lg border border-slate-200 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white [color-scheme:dark]"
+            />
           </div>
 
-          {/* recommended time slots  */}
+          {/* Recommended time slots */}
           <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
             <div className="flex justify-between items-center">
               <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Recommended Times</span>
-              <button 
-                type="button" 
-                onClick={fetchRecommendedSlots} 
+              <button
+                type="button"
+                onClick={fetchRecommendedSlots}
                 disabled={loadingSlots}
                 className="text-blue-600 dark:text-blue-400 text-sm hover:underline disabled:opacity-50"
               >
@@ -228,7 +264,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
               </button>
             </div>
             {slotError ? <p className="mt-2 text-xs text-red-500">{slotError}</p> : null}
-            
+
             {recommendedSlots && (
               <div className="flex flex-wrap gap-2 mt-3">
                 {recommendedSlots.map((slot, index) => (
@@ -263,7 +299,7 @@ export default function CreateMeetingModal({ isOpen, onClose, onSuccess }: Creat
           {error ? <p className="text-sm text-red-500">{error}</p> : null}
 
           <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
-            <button 
+            <button
               type="button"
               onClick={onClose}
               className="px-5 py-2.5 text-sm font-medium text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"

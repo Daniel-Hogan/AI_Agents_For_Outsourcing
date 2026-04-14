@@ -14,6 +14,7 @@ export interface Meeting {
   title: string;
   description: string | null;
   location: string | null;
+  meeting_type: "in_person" | "virtual";
   color: string;
   start_time: string;
   end_time: string;
@@ -58,6 +59,7 @@ export interface CreateMeetingPayload {
   title: string;
   description?: string;
   location?: string;
+  meeting_type?: "in_person" | "virtual";
   color?: string;
   start_time: string;
   end_time: string;
@@ -108,4 +110,8 @@ export async function updateMeetingRsvp(
     method: "POST",
     body: JSON.stringify({ status }),
   });
+}
+
+export async function getMeetingAvailability(meetingId: number) {
+  return apiJson(`/meetings/${meetingId}/availability`);
 }

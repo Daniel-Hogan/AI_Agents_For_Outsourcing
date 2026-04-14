@@ -83,7 +83,12 @@ def _fetch_meeting_row(meeting_id: int, user_id: int, db: Session):
                 m.title,
                 m.description,
                 m.location,
-                COALESCE(m.color, '#3498db') AS color,
+                COALESCE(m.meeting_type, 'in_person') AS meeting_type,
+                CASE 
+                WHEN COUNT(ma.user_id) FILTER (WHERE ma.status = 'maybe') > 0
+                    THEN '#facc15'
+                ELSE COALESCE(m.color, '#3498db')
+                END AS color,              
                 m.start_time,
                 m.end_time,
                 m.capacity,
@@ -201,6 +206,32 @@ def _validate_meeting_window(start_time, end_time) -> None:
         raise HTTPException(status_code=400, detail="end_time must be after start_time")
 
 
+def _sync_attendee_calendar(meeting_id: int, user_id: int, status: str, db: Session) -> None:
+    if status in ("accepted", "maybe"):
+        attendee_calendar_id = get_or_create_user_calendar(user_id, db)
+        db.execute(
+            text(
+                """
+                INSERT INTO attendee_calendar_links (meeting_id, user_id, calendar_id)
+                VALUES (:meeting_id, :user_id, :calendar_id)
+                ON CONFLICT (meeting_id, user_id) DO UPDATE
+                    SET calendar_id = EXCLUDED.calendar_id
+                """
+            ),
+            {"meeting_id": meeting_id, "user_id": user_id, "calendar_id": attendee_calendar_id},
+        )
+    elif status == "declined":
+        db.execute(
+            text(
+                """
+                DELETE FROM attendee_calendar_links
+                WHERE meeting_id = :meeting_id AND user_id = :user_id
+                """
+            ),
+            {"meeting_id": meeting_id, "user_id": user_id},
+        )
+
+
 @router.get("/", response_model=list[MeetingResponse])
 def list_meetings(
     include_cancelled: bool = Query(False),
@@ -220,7 +251,12 @@ def list_meetings(
                 m.title,
                 m.description,
                 m.location,
-                COALESCE(m.color, '#3498db') AS color,
+                COALESCE(m.meeting_type, 'in_person') AS meeting_type,
+                CASE 
+                WHEN COUNT(ma.user_id) FILTER (WHERE ma.status = 'maybe') > 0
+                    THEN '#facc15'
+                ELSE COALESCE(m.color, '#3498db')
+                END AS color,
                 m.start_time,
                 m.end_time,
                 m.capacity,
@@ -282,6 +318,7 @@ def create_meeting(
                 title,
                 description,
                 location,
+                meeting_type,
                 color,
                 start_time,
                 end_time,
@@ -296,6 +333,7 @@ def create_meeting(
                 :title,
                 :description,
                 :location,
+                :meeting_type,
                 :color,
                 :start_time,
                 :end_time,
@@ -313,6 +351,7 @@ def create_meeting(
             "title": payload.title.strip(),
             "description": payload.description.strip() if payload.description else None,
             "location": payload.location.strip() if payload.location else None,
+            "meeting_type": payload.meeting_type,
             "color": payload.color or "#3498db",
             "start_time": payload.start_time,
             "end_time": payload.end_time,
@@ -354,15 +393,8 @@ def update_meeting(
 
     if updates:
         allowed_fields = {
-            "title",
-            "description",
-            "location",
-            "color",
-            "start_time",
-            "end_time",
-            "capacity",
-            "setup_minutes",
-            "cleanup_minutes",
+            "title", "description", "location", "meeting_type", "color",
+            "start_time", "end_time", "capacity", "setup_minutes", "cleanup_minutes",
         }
         filtered_updates = {
             key: (value.strip() if isinstance(value, str) and key in {"title", "description", "location"} else value)
@@ -403,7 +435,10 @@ def cancel_meeting(
         text("UPDATE meetings SET status = 'cancelled' WHERE id = :meeting_id"),
         {"meeting_id": meeting_id},
     )
-
+    db.execute(
+        text("DELETE FROM attendee_calendar_links WHERE meeting_id = :meeting_id"),
+        {"meeting_id": meeting_id},
+    )
     db.commit()
     return _serialize_meeting(meeting_id, current_user.id, db)
 
@@ -467,8 +502,7 @@ def update_rsvp(
     attendee = db.execute(
         text(
             """
-            SELECT meeting_id
-            FROM meeting_attendees
+            SELECT meeting_id FROM meeting_attendees
             WHERE meeting_id = :meeting_id AND user_id = :user_id
             """
         ),
@@ -488,5 +522,32 @@ def update_rsvp(
         {"meeting_id": meeting_id, "user_id": current_user.id, "status": payload.status},
     )
 
+    if current_user.id != meeting["created_by"]:
+        _sync_attendee_calendar(meeting_id, current_user.id, payload.status, db)
+
     db.commit()
     return _serialize_meeting(meeting_id, current_user.id, db)
+
+
+@router.get("/{meeting_id}/availability")
+def get_availability(
+    meeting_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    meeting = _fetch_meeting_row(meeting_id, current_user.id, db)
+
+    attendees = db.execute(
+        text("""
+            SELECT user_id, status
+            FROM meeting_attendees
+            WHERE meeting_id = :meeting_id
+        """),
+        {"meeting_id": meeting_id},
+    ).mappings().all()
+
+    return {
+        "start_time": meeting["start_time"],
+        "end_time": meeting["end_time"],
+        "attendees": attendees,
+    }

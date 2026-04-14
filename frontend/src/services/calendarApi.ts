@@ -7,6 +7,7 @@ export interface CalendarApiEvent {
   color?: string | null;
   start_time: string;
   end_time: string;
+  current_user_status?: "invited" | "accepted" | "declined" | "maybe" | null;
 }
 
 export interface CalendarAvailabilitySlot {

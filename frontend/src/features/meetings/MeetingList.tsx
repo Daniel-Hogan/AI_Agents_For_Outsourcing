@@ -5,7 +5,7 @@ import {
   updateMeetingRsvp,
   type Meeting,
 } from "../../services/meetingsApi";
-import CreateMeetingModal from "./CreateMeetingModal"; 
+import CreateMeetingModal from "./CreateMeetingModal";
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString([], {
@@ -17,6 +17,51 @@ function formatDateTime(value: string) {
     minute: "2-digit",
   });
 }
+
+function AvailabilityBar({ attendees }: { attendees: { status: string }[] }) {
+  return (
+    <div className="flex gap-1 mt-2">
+      {attendees.map((a, i) => {
+        const color =
+          a.status === "accepted"
+            ? "bg-green-500"
+            : a.status === "declined"
+            ? "bg-red-500"
+            : a.status === "maybe"
+            ? "bg-yellow-400"
+            : "bg-slate-300";
+
+        return (
+          <div
+            key={i}
+            className={`h-2 flex-1 rounded ${color}`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+const RSVP_STYLES = {
+  accepted: {
+    active: "bg-green-500 text-white border-green-500",
+    inactive: "border border-green-200 text-green-700 hover:bg-green-50 dark:border-green-800 dark:text-green-400 dark:hover:bg-green-950",
+    dot: "bg-green-500",
+    label: "Accepted",
+  },
+  declined: {
+    active: "bg-red-500 text-white border-red-500",
+    inactive: "border border-red-200 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950",
+    dot: "bg-red-500",
+    label: "Declined",
+  },
+  maybe: {
+    active: "bg-yellow-400 text-white border-yellow-400",
+    inactive: "border border-yellow-200 text-yellow-700 hover:bg-yellow-50 dark:border-yellow-800 dark:text-yellow-400 dark:hover:bg-yellow-950",
+    dot: "bg-yellow-400",
+    label: "Maybe",
+  },
+} as const;
 
 export default function MeetingList() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -88,7 +133,7 @@ export default function MeetingList() {
         <div>
           <h1 className="text-3xl font-bold text-slate-800 dark:text-white">Meetings</h1>
           <p className="mt-2 text-slate-500 dark:text-slate-400">
-            Create team meetings, invite registered users by email, and manage RSVP status.
+            Manage your group meetings and availability.
           </p>
         </div>
         <button
@@ -105,6 +150,9 @@ export default function MeetingList() {
         <div className="grid gap-8 lg:grid-cols-2">
           <section className="space-y-4">
             <h2 className="text-xl font-semibold dark:text-white">Upcoming</h2>
+            {groupedMeetings.upcoming.length === 0 && (
+              <p className="text-sm text-slate-400">No upcoming meetings.</p>
+            )}
             {groupedMeetings.upcoming.map((meeting) => (
               <MeetingCard
                 key={meeting.id}
@@ -149,42 +197,51 @@ function MeetingCard({
   onRsvp: (meetingId: number, status: "accepted" | "declined" | "maybe") => Promise<void>;
 }) {
   const isCancelled = meeting.status === "cancelled";
+  const rsvp = meeting.current_user_status;
+  const isVirtual = meeting.meeting_type === "virtual";
+
+  const cardBg = isCancelled
+    ? "border-slate-200 bg-slate-50 opacity-50 dark:border-slate-800 dark:bg-slate-900/50"
+    : rsvp === "maybe"
+    ? "border-yellow-400 bg-yellow-50 dark:border-yellow-700 dark:bg-yellow-900/20"
+    : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900";
 
   return (
-    <article className={`rounded-2xl border p-5 shadow-sm transition-opacity ${isCancelled ? "border-slate-200 bg-slate-50 opacity-50 dark:border-slate-800 dark:bg-slate-900/50" : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"}`}>
-      <div className="flex justify-between">
-        <div className="flex items-center gap-3">
-          <span className="inline-block h-3 w-3 rounded-full" style={{ backgroundColor: meeting.color }} />
-          <h3 className="text-lg font-semibold dark:text-white">{meeting.title}</h3>
+    <article className={`rounded-2xl border p-5 shadow-sm transition-all ${cardBg}`}>
+      <div className="flex justify-between items-start gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="inline-block h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: meeting.color }} />
+          <h3 className="text-lg font-semibold truncate dark:text-white">{meeting.title}</h3>
         </div>
-        <span className={`text-sm font-medium ${isCancelled ? "text-red-500" : "text-slate-500 dark:text-slate-400"}`}>
-          {isCancelled ? "Cancelled" : meeting.status}
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${isVirtual ? "bg-purple-100 text-purple-700" : "bg-slate-100 text-slate-600"}`}>
+          {isVirtual ? "💻 Virtual" : "🏢 In Person"}
         </span>
       </div>
 
       <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-        {formatDateTime(meeting.start_time)} — {formatDateTime(meeting.end_time)}
+        🗓 {formatDateTime(meeting.start_time)} — {formatDateTime(meeting.end_time)}
       </p>
 
       {meeting.location && (
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">📍 {meeting.location}</p>
       )}
 
-      <p className="mt-1 text-sm dark:text-slate-300">
-        Your RSVP: <span className="font-medium capitalize">{meeting.current_user_status ?? "n/a"}</span>
-      </p>
-
       {meeting.attendees && meeting.attendees.length > 0 && (
-        <div className="mt-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Attendees</p>
-          <ul className="mt-1 space-y-1">
+        <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Group Availability</p>
+          <AvailabilityBar attendees={meeting.attendees} />
+          <ul className="mt-3 space-y-1">
             {meeting.attendees.map((attendee) => (
               <li key={attendee.email} className="flex items-center justify-between text-sm">
-                {/* FIX: Using first_name and last_name from the API instead of name */}
                 <span className="text-slate-700 dark:text-slate-300">
                   {attendee.first_name ? `${attendee.first_name} ${attendee.last_name}` : attendee.email}
                 </span>
-                <span className={`text-xs font-medium capitalize ${attendee.status === "accepted" ? "text-green-600" : attendee.status === "declined" ? "text-red-500" : attendee.status === "maybe" ? "text-yellow-500" : "text-slate-400"}`}>
+                <span className={`text-xs font-medium capitalize ${
+                  attendee.status === "accepted" ? "text-green-600"
+                  : attendee.status === "declined" ? "text-red-500"
+                  : attendee.status === "maybe" ? "text-yellow-500"
+                  : "text-slate-400"
+                }`}>
                   {attendee.status ?? "pending"}
                 </span>
               </li>
@@ -195,16 +252,18 @@ function MeetingCard({
 
       {!isCancelled && !meeting.is_organizer && (
         <div className="mt-4 flex gap-2">
-          <button onClick={() => onRsvp(meeting.id, "accepted")} className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${meeting.current_user_status === "accepted" ? "bg-green-600 text-white" : "border border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"}`}>Accept</button>
-          <button onClick={() => onRsvp(meeting.id, "declined")} className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${meeting.current_user_status === "declined" ? "bg-red-500 text-white" : "border border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"}`}>Decline</button>
-          <button onClick={() => onRsvp(meeting.id, "maybe")} className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${meeting.current_user_status === "maybe" ? "bg-yellow-400 text-white" : "border border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"}`}>Maybe</button>
+          {(["accepted", "declined", "maybe"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => onRsvp(meeting.id, s)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                rsvp === s ? RSVP_STYLES[s].active : RSVP_STYLES[s].inactive
+              }`}
+            >
+              {RSVP_STYLES[s].label}
+            </button>
+          ))}
         </div>
-      )}
-
-      {meeting.is_organizer && !isCancelled && (
-        <button onClick={() => onCancel(meeting.id)} className="mt-4 rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950">
-          Cancel Meeting
-        </button>
       )}
     </article>
   );

@@ -21,11 +21,17 @@ export type CalendarEvent = {
 };
 
 function toLocalEvent(e: any): CalendarEvent {
-  // Parse the time string directly without timezone conversion
   const startStr = e.start_time.replace("Z", "").split("T");
   const endStr = e.end_time.replace("Z", "").split("T");
   const [startH, startM] = startStr[1].split(":").map(Number);
   const [endH, endM] = endStr[1].split(":").map(Number);
+
+  // Color comes pre-computed from backend (yellow if anyone said maybe)
+  // Grey out if the current user personally declined
+  const displayColor = e.current_user_status === "declined"
+    ? "#e2e8f0"
+    : e.color || "#3498db";
+
   return {
     id: e.id,
     date: startStr[0],
@@ -34,8 +40,9 @@ function toLocalEvent(e: any): CalendarEvent {
     startMinute: startM,
     endHour: endH,
     endMinute: endM,
-    color: e.color || "#3498db",
+    color: displayColor,
     location: e.location,
+    status: e.current_user_status,
   };
 }
 
