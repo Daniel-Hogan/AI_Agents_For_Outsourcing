@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import MonthView from "./MonthView";
 import WeekView from "./WeekView";
 import {
+  ApiError,
   fetchEvents,
   createEvent,
   updateEvent,
@@ -85,8 +86,12 @@ export default function PersonalCalendar() {
     try {
       const data = await fetchEvents();
       setEvents(data.map(toLocalEvent));
-    } catch {
-      setError("Failed to load events. Make sure you are logged in.");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setError("Your session expired. Please log in again.");
+      } else {
+        setError("Failed to load events. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
