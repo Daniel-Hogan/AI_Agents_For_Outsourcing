@@ -206,32 +206,6 @@ def _validate_meeting_window(start_time, end_time) -> None:
         raise HTTPException(status_code=400, detail="end_time must be after start_time")
 
 
-def _sync_attendee_calendar(meeting_id: int, user_id: int, status: str, db: Session) -> None:
-    if status in ("accepted", "maybe"):
-        attendee_calendar_id = get_or_create_user_calendar(user_id, db)
-        db.execute(
-            text(
-                """
-                INSERT INTO attendee_calendar_links (meeting_id, user_id, calendar_id)
-                VALUES (:meeting_id, :user_id, :calendar_id)
-                ON CONFLICT (meeting_id, user_id) DO UPDATE
-                    SET calendar_id = EXCLUDED.calendar_id
-                """
-            ),
-            {"meeting_id": meeting_id, "user_id": user_id, "calendar_id": attendee_calendar_id},
-        )
-    elif status == "declined":
-        db.execute(
-            text(
-                """
-                DELETE FROM attendee_calendar_links
-                WHERE meeting_id = :meeting_id AND user_id = :user_id
-                """
-            ),
-            {"meeting_id": meeting_id, "user_id": user_id},
-        )
-
-
 @router.get("/", response_model=list[MeetingResponse])
 def list_meetings(
     include_cancelled: bool = Query(False),
@@ -435,10 +409,6 @@ def cancel_meeting(
         text("UPDATE meetings SET status = 'cancelled' WHERE id = :meeting_id"),
         {"meeting_id": meeting_id},
     )
-    db.execute(
-        text("DELETE FROM attendee_calendar_links WHERE meeting_id = :meeting_id"),
-        {"meeting_id": meeting_id},
-    )
     db.commit()
     return _serialize_meeting(meeting_id, current_user.id, db)
 
@@ -521,9 +491,6 @@ def update_rsvp(
         ),
         {"meeting_id": meeting_id, "user_id": current_user.id, "status": payload.status},
     )
-
-    if current_user.id != meeting["created_by"]:
-        _sync_attendee_calendar(meeting_id, current_user.id, payload.status, db)
 
     db.commit()
     return _serialize_meeting(meeting_id, current_user.id, db)
