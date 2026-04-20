@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  cancelMeeting,
   listMeetings,
   updateMeetingRsvp,
   type Meeting,
@@ -97,15 +96,6 @@ export default function MeetingList() {
     return { upcoming, past };
   }, [meetings]);
 
-  async function handleCancelMeeting(meetingId: number) {
-    try {
-      await cancelMeeting(meetingId);
-      await loadMeetings();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to cancel meeting.");
-    }
-  }
-
   async function handleRsvp(
     meetingId: number,
     status: "accepted" | "declined" | "maybe"
@@ -158,7 +148,6 @@ export default function MeetingList() {
               <MeetingCard
                 key={meeting.id}
                 meeting={meeting}
-                onCancel={handleCancelMeeting}
                 onRsvp={handleRsvp}
                 onReschedule={setReschedulingMeeting}
               />
@@ -170,7 +159,6 @@ export default function MeetingList() {
               <MeetingCard
                 key={meeting.id}
                 meeting={meeting}
-                onCancel={handleCancelMeeting}
                 onRsvp={handleRsvp}
                 onReschedule={setReschedulingMeeting}
               />
@@ -200,12 +188,10 @@ export default function MeetingList() {
 
 function MeetingCard({
   meeting,
-  onCancel,
   onRsvp,
   onReschedule,
 }: {
   meeting: Meeting;
-  onCancel: (meetingId: number) => Promise<void>;
   onRsvp: (meetingId: number, status: "accepted" | "declined" | "maybe") => Promise<void>;
   onReschedule: (meeting: Meeting) => void;
 }) {

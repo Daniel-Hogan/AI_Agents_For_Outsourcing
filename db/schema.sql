@@ -85,6 +85,7 @@ CREATE TABLE meetings (
   title TEXT NOT NULL,
   description TEXT,
   location TEXT,
+  meeting_type TEXT NOT NULL DEFAULT 'in_person' CHECK (meeting_type IN ('in_person', 'virtual')),
   color TEXT NOT NULL DEFAULT '#3498db',
   start_time TIMESTAMPTZ NOT NULL,
   end_time TIMESTAMPTZ NOT NULL,

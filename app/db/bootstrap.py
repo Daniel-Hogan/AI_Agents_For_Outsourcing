@@ -5,6 +5,7 @@ from app.db.session import SessionLocal
 
 BOOTSTRAP_STATEMENTS = [
     "ALTER TABLE meetings ADD COLUMN IF NOT EXISTS description TEXT",
+    "ALTER TABLE meetings ADD COLUMN IF NOT EXISTS meeting_type TEXT NOT NULL DEFAULT 'in_person'",
     "ALTER TABLE meetings ADD COLUMN IF NOT EXISTS color TEXT NOT NULL DEFAULT '#3498db'",
     "ALTER TABLE meetings ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'confirmed'",
     (

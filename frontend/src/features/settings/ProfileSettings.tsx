@@ -1,4 +1,5 @@
 import AvailabilitySettings from "./AvailabilitySettings";
+import NotificationPreferences from "./NotificationPreferences";
 
 export default function ProfileSettings() {
   return (
@@ -9,6 +10,7 @@ export default function ProfileSettings() {
       </div>
 
       <AvailabilitySettings />
+      <NotificationPreferences />
     </div>
   );
 }

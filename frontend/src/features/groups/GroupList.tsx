@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-import { apiJson } from '../../lib/api';
+import { getGroups } from './groups.api';
 
 interface Group {
   id: number;
@@ -19,14 +18,16 @@ export default function GroupList() {
   useEffect(() => {
     const fetchGroups = async () => {
       try {
-        const data = await apiJson<Group[]>('/groups/');
+        const data = await getGroups();
         setGroups(data);
       } catch (err) {
-        if (err instanceof Error && err.message.toLowerCase().includes('not authenticated')) {
+        const message = err instanceof Error ? err.message : 'Could not connect to the backend server.';
+        if (message.toLowerCase().includes('unauthorized') || message.toLowerCase().includes('not authenticated')) {
+          localStorage.removeItem('access_token');
           navigate('/login');
           return;
         }
-        setError(err instanceof Error ? err.message : 'Could not connect to the backend server.');
+        setError(message);
       } finally {
         setIsLoading(false);
       }
@@ -42,9 +43,20 @@ export default function GroupList() {
     <div className="max-w-4xl mx-auto">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold text-slate-800 dark:text-white">Your Groups</h1>
-        <button className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium transition">
-          + Create Group
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/groups/new')}
+            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium transition"
+          >
+            + Create Group
+          </button>
+          <button
+            onClick={() => navigate('/groups/join')}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium transition"
+          >
+            Join Group
+          </button>
+        </div>
       </div>
       
       {groups.length === 0 ? (

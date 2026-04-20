@@ -2,10 +2,11 @@ import logging
 import time
 import uuid
 
-from fastapi import FastAPI, APIRouter, Depends, Request
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.auth import router as auth_router
@@ -16,6 +17,7 @@ from app.core.config import settings
 from app.core.logging import configure_logging
 from app.db.bootstrap import ensure_runtime_schema
 from app.models import User
+from app.schemas.groups import CreateGroupRequest, GroupResponse, JoinGroupRequest
 
 from app.api.deps import get_current_user,get_db
 
@@ -24,6 +26,16 @@ router = APIRouter(prefix="/groups", tags=["groups"])
 
 configure_logging(settings.log_level)
 logger = logging.getLogger("app")
+
+
+def _allowed_origins() -> list[str]:
+    origins = {
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    }
+    if settings.frontend_origin:
+        origins.add(settings.frontend_origin)
+    return sorted(origins)
 
 def create_app() -> FastAPI:
     api = FastAPI(title="AI Agents API")
@@ -69,7 +81,7 @@ def create_app() -> FastAPI:
 
     api.add_middleware(
         CORSMiddleware,
-        allow_origins=[settings.frontend_origin] if settings.frontend_origin else [],
+        allow_origins=_allowed_origins(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -98,4 +110,101 @@ def get_user_groups(current_user: User = Depends(get_current_user), db: Session 
     result = db.execute(query, {"user_id": current_user.id}).mappings().all()
     
     return [dict(row) for row in result]
+
+
+def _group_id_from_invite_code(invite_code: str) -> int | None:
+    token = invite_code.strip()
+    if not token:
+        return None
+
+    # Minimal invite format support backed by current schema:
+    # numeric code ("12") or prefixed code ("GRP-12").
+    token_upper = token.upper()
+    if token_upper.startswith("GRP-"):
+        token = token[4:]
+
+    if token.isdigit():
+        return int(token)
+
+    return None
+
+
+@router.post("/", response_model=GroupResponse)
+def create_group(payload: CreateGroupRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    group_name = payload.name.strip()
+    if not group_name:
+        raise HTTPException(status_code=422, detail="Group name cannot be empty")
+
+    description = payload.description.strip() if payload.description else None
+    if description == "":
+        description = None
+
+    group_row = db.execute(
+        text(
+            """
+            INSERT INTO groups (name, description)
+            VALUES (:name, :description)
+            RETURNING id, name, description
+            """
+        ),
+        {"name": group_name, "description": description},
+    ).mappings().one()
+
+    db.execute(
+        text(
+            """
+            INSERT INTO group_memberships (user_id, group_id, role)
+            VALUES (:user_id, :group_id, 'owner')
+            """
+        ),
+        {"user_id": current_user.id, "group_id": group_row["id"]},
+    )
+    db.commit()
+
+    return GroupResponse(
+        id=group_row["id"],
+        name=group_row["name"],
+        description=group_row["description"],
+        role="owner",
+    )
+
+
+@router.post("/join", response_model=GroupResponse)
+def join_group(payload: JoinGroupRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    group_id = payload.groupId
+    if group_id is None and payload.inviteCode:
+        group_id = _group_id_from_invite_code(payload.inviteCode)
+
+    if group_id is None:
+        raise HTTPException(status_code=422, detail="Provide a valid groupId or inviteCode")
+
+    existing_group = db.execute(
+        text("SELECT id, name, description FROM groups WHERE id = :group_id"),
+        {"group_id": group_id},
+    ).mappings().one_or_none()
+
+    if existing_group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    try:
+        db.execute(
+            text(
+                """
+                INSERT INTO group_memberships (user_id, group_id, role)
+                VALUES (:user_id, :group_id, 'member')
+                """
+            ),
+            {"user_id": current_user.id, "group_id": group_id},
+        )
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="You are already a member of this group")
+
+    return GroupResponse(
+        id=existing_group["id"],
+        name=existing_group["name"],
+        description=existing_group["description"],
+        role="member",
+    )
 app = create_app()

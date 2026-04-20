@@ -18,6 +18,7 @@ export type CalendarEvent = {
   endMinute: number;
   color?: string;
   location?: string;
+  status?: "invited" | "accepted" | "declined" | "maybe" | null;
 };
 
 function toLocalEvent(e: any): CalendarEvent {
@@ -92,8 +93,12 @@ export default function PersonalCalendar() {
     try {
       const data = await fetchEvents();
       setEvents(data.map(toLocalEvent));
-    } catch {
-      setError("Failed to load events. Make sure you are logged in.");
+    } catch (err) {
+      if (err instanceof Error && /not authenticated|invalid token|401/i.test(err.message)) {
+        setError("Your session expired. Please log in again.");
+      } else {
+        setError("Failed to load events. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
