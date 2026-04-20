@@ -126,7 +126,8 @@ def _load_weekly_availability(user_ids: list[int], db: Session) -> dict[int, dic
 
 
 def _load_busy_meetings(
-    user_ids: list[int], start_date: date, end_date: date, db: Session
+    user_ids: list[int], start_date: date, end_date: date, db: Session,
+    exclude_meeting_id: int | None = None,
 ) -> dict[int, list[dict]]:
     busy_by_user: dict[int, list[dict]] = {user_id: [] for user_id in user_ids}
     window_start = datetime.combine(start_date, time.min)
@@ -143,6 +144,7 @@ def _load_busy_meetings(
                 WHERE COALESCE(m.status, 'confirmed') <> 'cancelled'
                   AND m.end_time > :window_start
                   AND m.start_time < :window_end
+                  AND (:exclude_meeting_id IS NULL OR m.id <> :exclude_meeting_id)
                   AND (
                     m.created_by = :user_id
                     OR ma.status IN ('invited', 'accepted', 'maybe')
@@ -150,7 +152,12 @@ def _load_busy_meetings(
                 ORDER BY m.start_time ASC
                 """
             ),
-            {"user_id": user_id, "window_start": window_start, "window_end": window_end},
+            {
+                "user_id": user_id,
+                "window_start": window_start,
+                "window_end": window_end,
+                "exclude_meeting_id": exclude_meeting_id,
+            },
         ).mappings().all()
         busy_by_user[user_id] = [dict(row) for row in rows]
 
@@ -234,9 +241,13 @@ def recommend_common_slots(
     max_results: int,
     db: Session,
     increment_minutes: int = 30,
+    exclude_meeting_id: int | None = None,
 ) -> list[dict]:
     availability_by_user = _load_weekly_availability(user_ids, db)
-    busy_by_user = _load_busy_meetings(user_ids, start_date, end_date, db)
+    busy_by_user = _load_busy_meetings(
+        user_ids, start_date, end_date, db,
+        exclude_meeting_id=exclude_meeting_id,
+    )
 
     all_candidates: list[dict] = []
     for current_date in _daterange(start_date, end_date):

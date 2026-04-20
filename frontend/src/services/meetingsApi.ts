@@ -115,3 +115,26 @@ export async function updateMeetingRsvp(
 export async function getMeetingAvailability(meetingId: number) {
   return apiJson(`/meetings/${meetingId}/availability`);
 }
+
+export async function fetchRescheduleSuggestions(
+  meetingId: number,
+  payload: MeetingRecommendationsPayload
+) {
+  return apiJson<MeetingRecommendationsResponse>(
+    `/meetings/${meetingId}/reschedule-suggestions`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function updateMeeting(
+  meetingId: number,
+  payload: Partial<CreateMeetingPayload>
+) {
+  return apiJson<Meeting>(`/meetings/${meetingId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}

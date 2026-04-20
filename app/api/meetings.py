@@ -528,6 +528,53 @@ def update_rsvp(
     db.commit()
     return _serialize_meeting(meeting_id, current_user.id, db)
 
+@router.post("/{meeting_id}/reschedule-suggestions", response_model=RecommendationResponse)
+def get_reschedule_suggestions(
+    meeting_id: int,
+    payload: RecommendationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    meeting = db.execute(
+        text("SELECT id, created_by, start_time, end_time FROM meetings WHERE id = :meeting_id"),
+        {"meeting_id": meeting_id},
+    ).mappings().first()
+    if meeting is None:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    if meeting["created_by"] != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the organizer can get reschedule suggestions")
+
+    participant_ids = _resolve_attendee_user_ids(db, [str(email) for email in payload.attendee_emails])
+    if payload.include_organizer and current_user.id not in participant_ids:
+        participant_ids = [current_user.id, *participant_ids]
+
+    if not participant_ids:
+        raise HTTPException(status_code=400, detail="At least one participant is required")
+
+    participant_rows = _load_users_by_ids(db, participant_ids)
+    recommendations = recommend_common_slots(
+        user_ids=participant_ids,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        duration_minutes=payload.duration_minutes,
+        max_results=payload.max_results,
+        db=db,
+        exclude_meeting_id=meeting_id,
+    )
+
+    return {
+        "attendees": [
+            {
+                "user_id": row["id"],
+                "email": row["email"],
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+            }
+            for row in participant_rows
+        ],
+        "duration_minutes": payload.duration_minutes,
+        "recommendations": recommendations,
+    }
 
 @router.get("/{meeting_id}/availability")
 def get_availability(

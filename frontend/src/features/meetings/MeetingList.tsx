@@ -6,7 +6,7 @@ import {
   type Meeting,
 } from "../../services/meetingsApi";
 import CreateMeetingModal from "./CreateMeetingModal";
-
+import RescheduleMeetingModal from "./RescheduleMeetingModal";
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString([], {
     timeZone: "UTC",
@@ -68,6 +68,7 @@ export default function MeetingList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [reschedulingMeeting, setReschedulingMeeting] = useState<Meeting | null>(null);
 
   async function loadMeetings() {
     setLoading(true);
@@ -159,6 +160,7 @@ export default function MeetingList() {
                 meeting={meeting}
                 onCancel={handleCancelMeeting}
                 onRsvp={handleRsvp}
+                onReschedule={setReschedulingMeeting}
               />
             ))}
           </section>
@@ -170,6 +172,7 @@ export default function MeetingList() {
                 meeting={meeting}
                 onCancel={handleCancelMeeting}
                 onRsvp={handleRsvp}
+                onReschedule={setReschedulingMeeting}
               />
             ))}
           </section>
@@ -183,6 +186,14 @@ export default function MeetingList() {
           onSuccess={() => { setIsModalOpen(false); loadMeetings(); }}
         />
       )}
+
+      {reschedulingMeeting && (
+        <RescheduleMeetingModal
+          onClose={() => setReschedulingMeeting(null)}
+          meeting={reschedulingMeeting}
+          onSuccess={() => { setReschedulingMeeting(null); loadMeetings(); }}
+        />
+      )}
     </div>
   );
 }
@@ -191,10 +202,12 @@ function MeetingCard({
   meeting,
   onCancel,
   onRsvp,
+  onReschedule,
 }: {
   meeting: Meeting;
   onCancel: (meetingId: number) => Promise<void>;
   onRsvp: (meetingId: number, status: "accepted" | "declined" | "maybe") => Promise<void>;
+  onReschedule: (meeting: Meeting) => void;
 }) {
   const isCancelled = meeting.status === "cancelled";
   const rsvp = meeting.current_user_status;
@@ -250,6 +263,25 @@ function MeetingCard({
         </div>
       )}
 
+      {!isCancelled && meeting.is_organizer && (
+        <div className="mt-4 flex gap-2">
+          {meeting.declined_count > 0 && (
+            <button
+              onClick={() => onReschedule(meeting)}
+              className="rounded-lg px-3 py-1.5 text-sm font-medium border border-orange-200 text-orange-700 hover:bg-orange-50 dark:border-orange-800 dark:text-orange-400 dark:hover:bg-orange-950 transition-colors"
+            >
+              🔄 Reschedule
+            </button>
+          )}
+          <button
+            onClick={() => onCancel(meeting.id)}
+            className="rounded-lg px-3 py-1.5 text-sm font-medium border border-red-200 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950 transition-colors"
+          >
+            Cancel Meeting
+          </button>
+        </div>
+      )}
+
       {!isCancelled && !meeting.is_organizer && (
         <div className="mt-4 flex gap-2">
           {(["accepted", "declined", "maybe"] as const).map((s) => (
@@ -265,6 +297,6 @@ function MeetingCard({
           ))}
         </div>
       )}
-    </article>
+      </article>
   );
 }
