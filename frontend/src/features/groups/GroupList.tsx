@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getGroups } from './groups.api';
 
 interface Group {
   id: number;
@@ -16,36 +17,17 @@ export default function GroupList() {
 
   useEffect(() => {
     const fetchGroups = async () => {
-      // 1. Get the token saved during login
-      const token = localStorage.getItem('access_token');
-      
-      if (!token) {
-        // If no token, kick them back to login
-        navigate('/login');
-        return;
-      }
-
       try {
-        // 2. Fetch the groups from FastAPI
-        const response = await fetch('http://127.0.0.1:8000/groups/', {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setGroups(data);
-        } else if (response.status === 401) {
-          // Token expired or invalid
+        const data = await getGroups();
+        setGroups(data);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Could not connect to the backend server.';
+        if (message.toLowerCase().includes('unauthorized') || message.toLowerCase().includes('not authenticated')) {
           localStorage.removeItem('access_token');
           navigate('/login');
-        } else {
-          setError('Failed to fetch groups.');
+          return;
         }
-      } catch (err) {
-        setError('Could not connect to the backend server.');
+        setError(message);
       } finally {
         setIsLoading(false);
       }
@@ -61,9 +43,20 @@ export default function GroupList() {
     <div className="max-w-4xl mx-auto">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold text-slate-800 dark:text-white">Your Groups</h1>
-        <button className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium transition">
-          + Create Group
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/groups/new')}
+            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium transition"
+          >
+            + Create Group
+          </button>
+          <button
+            onClick={() => navigate('/groups/join')}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium transition"
+          >
+            Join Group
+          </button>
+        </div>
       </div>
       
       {groups.length === 0 ? (

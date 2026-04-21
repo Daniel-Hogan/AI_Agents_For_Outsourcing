@@ -2,11 +2,11 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function Navbar() {
-  const { setToken } = useAuth();
+  const { logout, user } = useAuth();
   const navigate = useNavigate();
 
-  function handleLogout() {
-    setToken(null);
+  async function handleLogout() {
+    await logout();
     navigate("/login");
   }
 
@@ -14,6 +14,7 @@ export default function Navbar() {
     <nav style={styles.nav}>
       <div style={styles.brand}>
         <h2>AI Scheduler</h2>
+        {user ? <small style={styles.userLabel}>{user.first_name} {user.last_name}</small> : null}
       </div>
       <div style={styles.links}>
         <Link to="/" style={styles.link}>Dashboard</Link>
@@ -38,6 +39,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "white",
   },
   brand: { marginRight: "2rem" },
+  userLabel: {
+    display: "block",
+    marginTop: "0.2rem",
+    fontSize: "0.75rem",
+    opacity: 0.8,
+  },
   links: { display: "flex", gap: "1.5rem", flex: 1 },
   link: { color: "white", textDecoration: "none", padding: "0.5rem 1rem" },
   logoutBtn: {

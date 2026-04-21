@@ -1,36 +1,31 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import { register } from './auth.api';
 
 const Signup = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({ firstName: '', lastName: '', email: '', password: '' });
   const navigate = useNavigate();
+  const { setToken, refreshSession } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/auth/register", {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: formData.email, 
-          password: formData.password, 
-          first_name: formData.firstName, 
-          last_name: formData.lastName 
-        }),
+      const response = await register({
+        email: formData.email,
+        password: formData.password,
+        first_name: formData.firstName,
+        last_name: formData.lastName,
       });
 
-      if (response.ok) {
-        alert("Account created! Please sign in.");
-        navigate("/login");
-      } else {
-        const data = await response.json();
-        alert(`Error: ${data.detail || "Registration failed"}`);
-      }
+      setToken(response.access_token);
+      await refreshSession();
+      navigate("/");
     } catch (error) {
-      alert("Backend connection failed.");
+      alert(error instanceof Error ? error.message : "Backend connection failed.");
     } finally {
       setIsLoading(false);
     }

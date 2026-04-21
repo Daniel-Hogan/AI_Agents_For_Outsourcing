@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime,time
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, func,SmallInteger,Time
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -72,3 +72,12 @@ class GroupMembership(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True)
     role: Mapped[str] = mapped_column(String, nullable=False)
+
+class TimeSlotPreference(Base):
+    __tablename__ = "time_slot_preferences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    day_of_week: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    start_time: Mapped[time] = mapped_column(Time, nullable=False)
+    end_time: Mapped[time] = mapped_column(Time, nullable=False)

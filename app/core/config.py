@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     google_client_id: str | None = None
     google_client_secret: str | None = None
 
+    log_level: str = "INFO"
+
     openrouteservice_api_key: str | None = None
     openrouteservice_base_url: str = "https://api.openrouteservice.org"
     openrouteservice_timeout_seconds: int = 10

@@ -3,8 +3,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.db.bootstrap import ensure_runtime_schema
-from app.main import create_app
 from app.db.session import SessionLocal
+from app.main import create_app
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -25,29 +25,29 @@ def _require_db():
 @pytest.fixture(scope="session")
 def client() -> TestClient:
     app = create_app()
-    return TestClient(app)
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 @pytest.fixture(autouse=True)
 def _db_cleanup():
-    # Truncate auth-related tables between tests.
     db = SessionLocal()
     try:
         db.execute(
             text(
                 """
                 TRUNCATE TABLE
-                    refresh_tokens,
-                    password_credentials,
-                    auth_identities,
-                    time_slot_preferences,
                     meeting_attendees,
                     meetings,
                     user_calendars,
                     calendars,
+                    time_slot_preferences,
                     group_memberships,
                     groups,
                     location_cache,
+                    refresh_tokens,
+                    password_credentials,
+                    auth_identities,
                     users
                 RESTART IDENTITY CASCADE
                 """
