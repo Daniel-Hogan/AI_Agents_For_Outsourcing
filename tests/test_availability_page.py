@@ -50,13 +50,11 @@ def test_availability_add_supports_multiple_days(client):
 
     response = client.post(
         "/availability/add",
-        data=[
-            ("day_of_week", "1"),
-            ("day_of_week", "3"),
-            ("day_of_week", "5"),
-            ("start_time", "09:00"),
-            ("end_time", "10:00"),
-        ],
+        data={
+            "day_of_week": ["1", "3", "5"],
+            "start_time": "09:00",
+            "end_time": "10:00",
+        },
         follow_redirects=False,
     )
 

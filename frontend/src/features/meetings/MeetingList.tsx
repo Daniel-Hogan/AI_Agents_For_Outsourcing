@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  cancelMeeting,
   listMeetings,
   updateMeetingRsvp,
   type Meeting,
@@ -118,6 +119,17 @@ export default function MeetingList() {
     }
   }
 
+  async function handleCancel(meetingId: number) {
+    try {
+      const updated = await cancelMeeting(meetingId);
+      setMeetings((prev) =>
+        prev.map((meeting) => (meeting.id === meetingId ? updated : meeting))
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to cancel meeting.");
+    }
+  }
+
   return (
     <div className="max-w-6xl mx-auto space-y-8">
       <div className="flex justify-between items-start md:items-center flex-col md:flex-row gap-4">
@@ -149,6 +161,7 @@ export default function MeetingList() {
                 key={meeting.id}
                 meeting={meeting}
                 onRsvp={handleRsvp}
+                onCancel={handleCancel}
                 onReschedule={setReschedulingMeeting}
               />
             ))}
@@ -160,6 +173,7 @@ export default function MeetingList() {
                 key={meeting.id}
                 meeting={meeting}
                 onRsvp={handleRsvp}
+                onCancel={handleCancel}
                 onReschedule={setReschedulingMeeting}
               />
             ))}
@@ -189,10 +203,12 @@ export default function MeetingList() {
 function MeetingCard({
   meeting,
   onRsvp,
+  onCancel,
   onReschedule,
 }: {
   meeting: Meeting;
   onRsvp: (meetingId: number, status: "accepted" | "declined" | "maybe") => Promise<void>;
+  onCancel: (meetingId: number) => Promise<void>;
   onReschedule: (meeting: Meeting) => void;
 }) {
   const isCancelled = meeting.status === "cancelled";
