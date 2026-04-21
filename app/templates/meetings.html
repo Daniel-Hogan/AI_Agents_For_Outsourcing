@@ -166,6 +166,91 @@
               <p class="panel-copy">Tune the search window before asking the app to suggest the best slot.</p>
             </div>
 
+            <div class="recommendation-quick-controls" data-recommendation-sliders>
+              <div class="recommendation-slider-grid">
+                <section class="recommendation-slider-card">
+                  <div class="recommendation-slider-header">
+                    <div>
+                      <span class="field-label">Window by days</span>
+                      <p class="recommendation-slider-value" data-window-range-label aria-live="polite"></p>
+                    </div>
+                    <p class="recommendation-slider-meta" data-window-span-label aria-live="polite"></p>
+                  </div>
+
+                  <div class="dual-range" data-recommendation-window-slider>
+                    <div class="dual-range-track"></div>
+                    <div class="dual-range-fill" data-window-slider-fill></div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="14"
+                      step="1"
+                      value="0"
+                      data-window-start-offset
+                      aria-label="Recommendation window start day offset"
+                    />
+                    <input
+                      type="range"
+                      min="0"
+                      max="14"
+                      step="1"
+                      value="7"
+                      data-window-end-offset
+                      aria-label="Recommendation window end day offset"
+                    />
+                  </div>
+
+                  <div class="recommendation-slider-scale" aria-hidden="true">
+                    <span>Same day</span>
+                    <span>7 days</span>
+                    <span>14 days</span>
+                  </div>
+
+                  <p class="field-help">
+                    Keyboard friendly: focus either handle and use arrow keys. Exact window start and end fields stay below for precise edits.
+                  </p>
+                </section>
+
+                <section class="recommendation-slider-card">
+                  <div class="recommendation-slider-header">
+                    <div>
+                      <span class="field-label">Meeting length</span>
+                      <p class="recommendation-slider-value" data-duration-slider-label aria-live="polite"></p>
+                    </div>
+                    <p class="recommendation-slider-meta">15-minute steps</p>
+                  </div>
+
+                  <input
+                    class="recommendation-duration-slider"
+                    type="range"
+                    min="15"
+                    max="120"
+                    step="15"
+                    value="{{ recommendation_form['duration_minutes'] }}"
+                    data-duration-range
+                    aria-label="Meeting length in minutes"
+                  />
+
+                  <div class="recommendation-slider-scale" aria-hidden="true">
+                    <span>15 min</span>
+                    <span>60 min</span>
+                    <span>120 min</span>
+                  </div>
+
+                  <p class="field-help">
+                    Use the precise duration field below if you need a value outside the quick slider range.
+                  </p>
+                </section>
+              </div>
+
+              <div class="recommendation-exact-header">
+                <p class="section-kicker">Precise Fallback</p>
+                <p class="recommendation-exact-copy">
+                  The exact window start, window end, and duration inputs below always stay editable for fine-grained adjustments.
+                </p>
+              </div>
+            </div>
+
             <div class="form-grid form-grid-wide">
               <div class="datetime-picker datetime-card" data-datetime-picker data-range-group="recommendation" data-range-role="start">
                 <label class="field-label">Window start</label>
@@ -228,6 +313,7 @@
                   type="number"
                   min="1"
                   max="720"
+                  step="15"
                   name="recommendation_duration_minutes"
                   value="{{ recommendation_form['duration_minutes'] }}"
                 />

@@ -72,6 +72,9 @@ def test_meetings_page_includes_enhanced_datetime_controls(client):
     assert response.status_code == 200, response.text
     assert "data-datetime-picker" in response.text
     assert "15-minute increments" in response.text
+    assert "data-recommendation-sliders" in response.text
+    assert "data-recommendation-window-slider" in response.text
+    assert "data-duration-range" in response.text
 
 
 def test_meeting_create_stores_selected_location_coordinates(client, monkeypatch):
