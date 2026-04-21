@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>{{ meeting["title"] }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}" />
+  {% include "_theme_head.html" %}
 </head>
-<body>
+<body class="detail-page">
   <main class="page">
     {% if messages %}
       <div class="toasts" aria-live="polite" aria-atomic="true">
@@ -16,49 +16,54 @@
       </div>
     {% endif %}
 
-    <section class="card" style="width:min(920px, 100%);">
-      <div style="display:flex; gap:10px; flex-wrap:wrap;">
-        <a href="{{ url_for('web_meetings') }}" style="text-decoration:none; color: var(--muted); font-size:14px;">
-          &larr; Back to meetings
-        </a>
-        <a href="{{ url_for('web_availability') }}" style="text-decoration:none; color: var(--blue); font-size:14px;">
-          Availability preferences
-        </a>
+    <section class="card detail-card shell-card-wide">
+      <div class="detail-header">
+        <div class="detail-links">
+          <a class="detail-link detail-link-muted" href="{{ url_for('web_meetings') }}">
+            &larr; Back to meetings
+          </a>
+          <a class="detail-link detail-link-accent" href="{{ url_for('web_availability') }}">
+            Availability preferences
+          </a>
+        </div>
+
+        {% set minimal = false %}
+        {% include "_theme_toggle.html" %}
       </div>
 
-      <h2 style="margin:10px 0 6px;">{{ meeting["title"] }}</h2>
+      <h2 class="page-title page-title-tight">{{ meeting["title"] }}</h2>
 
-      <div style="display:grid; gap:10px; margin-top:12px; color: var(--muted); font-size:14px;">
-        <div><strong style="color:#111827;">Organizer:</strong> {{ meeting["organizer_email"] }}</div>
-        <div><strong style="color:#111827;">Start:</strong> {{ meeting["start_time"] }}</div>
-        <div><strong style="color:#111827;">End:</strong> {{ meeting["end_time"] }}</div>
-        <div><strong style="color:#111827;">Location:</strong> {{ meeting["location"] or "-" }}</div>
-        <div><strong style="color:#111827;">Status:</strong> {{ meeting["status"] }}</div>
+      <div class="detail-meta-grid">
+        <div><strong>Organizer:</strong> {{ meeting["organizer_email"] }}</div>
+        <div><strong>Start:</strong> {{ meeting["start_time"] }}</div>
+        <div><strong>End:</strong> {{ meeting["end_time"] }}</div>
+        <div><strong>Location:</strong> {{ meeting["location"] or "-" }}</div>
+        <div><strong>Status:</strong> {{ meeting["status"] }}</div>
       </div>
 
-      <hr style="border:none; border-top:1px solid var(--border); margin:16px 0;"/>
+      <hr class="section-divider" />
 
-      <h3 style="margin:0 0 10px;">Attendees + Availability</h3>
+      <h3 class="section-title">Attendees + Availability</h3>
       {% if attendees|length == 0 %}
-        <p style="color: var(--muted); margin: 8px 0 0;">No attendees have been added yet.</p>
+        <p class="empty-copy">No attendees have been added yet.</p>
       {% else %}
-        <div style="overflow:auto; border:1px solid var(--border); border-radius:12px;">
-          <table style="width:100%; border-collapse:collapse; min-width: 760px;">
+        <div class="data-table-wrap">
+          <table class="data-table data-table-wide">
             <thead>
-              <tr style="background:#f9fafb;">
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Email</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Invite Status</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Availability</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Conflicts</th>
+              <tr>
+                <th>Email</th>
+                <th>Invite Status</th>
+                <th>Availability</th>
+                <th>Conflicts</th>
               </tr>
             </thead>
             <tbody>
               {% for attendee in attendees %}
-                <tr style="border-top:1px solid var(--border);">
-                  <td style="padding:12px; font-size:14px;">{{ attendee["email"] }}</td>
-                  <td style="padding:12px; font-size:14px;">{{ attendee["invite_status"] }}</td>
-                  <td style="padding:12px; font-size:14px;">{{ attendee["availability_status"] }}</td>
-                  <td style="padding:12px; font-size:14px;">{{ attendee["conflicts"] }}</td>
+                <tr>
+                  <td>{{ attendee["email"] }}</td>
+                  <td>{{ attendee["invite_status"] }}</td>
+                  <td>{{ attendee["availability_status"] }}</td>
+                  <td>{{ attendee["conflicts"] }}</td>
                 </tr>
               {% endfor %}
             </tbody>

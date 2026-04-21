@@ -1,6 +1,16 @@
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initDateTimePickers();
   initLocationAutocomplete();
+  initInviteeSuggestions();
   initRecommendationQuickControls();
 });
 
@@ -68,15 +78,6 @@ function initLocationAutocomplete() {
         `,
       )
       .join("");
-  }
-
-  function escapeHtml(value) {
-    return String(value)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll("\"", "&quot;")
-      .replaceAll("'", "&#39;");
   }
 
   async function fetchSuggestions(query, sequence) {
@@ -151,6 +152,220 @@ function initLocationAutocomplete() {
     window.setTimeout(() => {
       hideSuggestions();
     }, 150);
+  });
+}
+
+function initInviteeSuggestions() {
+  const root = document.querySelector("[data-invitee-picker-root]");
+  if (!root) {
+    return;
+  }
+
+  const textarea = root.querySelector("[data-invitee-input]");
+  const suggestionsPanel = root.querySelector("[data-invitee-suggestions]");
+  const endpoint = textarea?.dataset.inviteeUrl;
+
+  if (!textarea || !suggestionsPanel || !endpoint) {
+    return;
+  }
+
+  const bubbleTokens = ["amber", "mint", "rose", "sky", "violet"];
+  const debounceMs = 180;
+  let debounceTimer = null;
+  let requestSequence = 0;
+
+  function hideSuggestions() {
+    suggestionsPanel.hidden = true;
+    suggestionsPanel.innerHTML = "";
+  }
+
+  function showStatus(message) {
+    suggestionsPanel.hidden = false;
+    suggestionsPanel.innerHTML = `<div class="invitee-suggestion-status">${escapeHtml(message)}</div>`;
+  }
+
+  function parseInviteeEmails(value) {
+    return new Set(
+      String(value || "")
+        .split(/[,\n;]+/)
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean),
+    );
+  }
+
+  function getActiveTokenState() {
+    const value = textarea.value;
+    const caret = textarea.selectionStart ?? value.length;
+    const beforeCaret = value.slice(0, caret);
+    const afterCaret = value.slice(caret);
+    const rawStart = Math.max(beforeCaret.lastIndexOf(","), beforeCaret.lastIndexOf(";"), beforeCaret.lastIndexOf("\n")) + 1;
+    const nextSeparatorOffset = afterCaret.search(/[,\n;]/);
+    const rawEnd = nextSeparatorOffset === -1 ? value.length : caret + nextSeparatorOffset;
+    const rawSegment = value.slice(rawStart, rawEnd);
+    const leadingWhitespace = (rawSegment.match(/^\s*/) || [""])[0].length;
+    const trailingWhitespace = (rawSegment.match(/\s*$/) || [""])[0].length;
+    const tokenStart = rawStart + leadingWhitespace;
+    const tokenEnd = rawEnd - trailingWhitespace;
+
+    return {
+      rawStart,
+      rawEnd,
+      tokenStart,
+      tokenEnd,
+      query: value.slice(tokenStart, tokenEnd).trim(),
+    };
+  }
+
+  function filterSuggestions(items, seenEmails = new Set()) {
+    const existingEmails = parseInviteeEmails(textarea.value);
+    return (items || []).filter((item) => {
+      const email = String(item.email || "").trim().toLowerCase();
+      if (!email || existingEmails.has(email) || seenEmails.has(email)) {
+        return false;
+      }
+      seenEmails.add(email);
+      return true;
+    });
+  }
+
+  function renderSection(title, items, tokenOffset) {
+    if (!items.length) {
+      return "";
+    }
+
+    const bubbles = items
+      .map((item, index) => {
+        const colorToken = bubbleTokens[(tokenOffset + index) % bubbleTokens.length];
+        return `
+          <button
+            type="button"
+            class="invitee-bubble invitee-bubble-${colorToken}"
+            data-email="${escapeHtml(item.email)}"
+            aria-label="Add ${escapeHtml(item.email)} to invitees"
+          >
+            <span class="invitee-bubble-avatar">${escapeHtml(item.initials || "?")}</span>
+            <span class="invitee-bubble-copy">
+              <span class="invitee-bubble-name">${escapeHtml(item.display_name || item.email || "")}</span>
+              <span class="invitee-bubble-email">${escapeHtml(item.email || "")}</span>
+            </span>
+            <span class="invitee-bubble-reason">${escapeHtml(item.reason || "")}</span>
+          </button>
+        `;
+      })
+      .join("");
+
+    return `
+      <section class="invitee-suggestion-section">
+        <p class="invitee-suggestion-heading">${escapeHtml(title)}</p>
+        <div class="invitee-bubble-row">${bubbles}</div>
+      </section>
+    `;
+  }
+
+  function renderSuggestions(payload) {
+    const frequent = filterSuggestions(payload.frequent, new Set());
+    const matches = filterSuggestions(payload.matches, new Set());
+
+    if (!frequent.length && !matches.length) {
+      const state = getActiveTokenState();
+      showStatus(state.query ? "No matching teammates found." : "No frequent invitees yet. Start typing to search teammates.");
+      return;
+    }
+
+    suggestionsPanel.hidden = false;
+    suggestionsPanel.innerHTML = `
+      ${renderSection("Usually invite", frequent, 0)}
+      ${renderSection("Handle matches", matches, frequent.length)}
+    `;
+  }
+
+  async function fetchSuggestions(query, sequence) {
+    if (!query) {
+      showStatus("Loading invite suggestions...");
+    }
+
+    try {
+      const response = await fetch(`${endpoint}?q=${encodeURIComponent(query)}`, {
+        headers: { Accept: "application/json" },
+      });
+      if (sequence !== requestSequence) {
+        return;
+      }
+
+      if (!response.ok) {
+        showStatus("Invite suggestions are unavailable right now.");
+        return;
+      }
+
+      renderSuggestions(await response.json());
+    } catch (_error) {
+      if (sequence !== requestSequence) {
+        return;
+      }
+      showStatus("Invite suggestions are unavailable right now.");
+    }
+  }
+
+  function scheduleFetch() {
+    window.clearTimeout(debounceTimer);
+    debounceTimer = window.setTimeout(() => {
+      requestSequence += 1;
+      fetchSuggestions(getActiveTokenState().query, requestSequence);
+    }, debounceMs);
+  }
+
+  function insertInvitee(email) {
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!normalizedEmail) {
+      return;
+    }
+
+    const currentValue = textarea.value;
+    const state = getActiveTokenState();
+    const before = currentValue.slice(0, state.rawStart).replace(/\s*$/, "");
+    const after = currentValue.slice(state.rawEnd).replace(/^\s*/, "");
+    const existingEmails = parseInviteeEmails(`${before},${after}`);
+
+    let nextValue = before;
+    if (nextValue && !/[,\n;]$/.test(nextValue)) {
+      nextValue += ",";
+    }
+    if (nextValue) {
+      nextValue += " ";
+    }
+    if (!existingEmails.has(normalizedEmail)) {
+      nextValue += `${normalizedEmail}, `;
+    }
+    nextValue += after;
+
+    textarea.value = nextValue.trimStart();
+    const caretPosition = Math.max(0, textarea.value.length - after.length);
+    textarea.focus();
+    textarea.setSelectionRange(caretPosition, caretPosition);
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  textarea.addEventListener("focus", scheduleFetch);
+  textarea.addEventListener("input", scheduleFetch);
+  textarea.addEventListener("click", scheduleFetch);
+  textarea.addEventListener("keyup", (event) => {
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+      scheduleFetch();
+    }
+  });
+  textarea.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      hideSuggestions();
+    }
+  });
+
+  suggestionsPanel.addEventListener("click", (event) => {
+    const button = event.target.closest(".invitee-bubble");
+    if (!button) {
+      return;
+    }
+
+    insertInvitee(button.dataset.email || "");
   });
 }
 

@@ -1,13 +1,18 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Create Account</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}" />
+  {% include "_theme_head.html" %}
 </head>
-<body>
+<body class="auth-page signup-page">
   <main class="page">
+    <div class="page-utility-bar page-utility-bar-auth">
+      {% set minimal = true %}
+      {% include "_theme_toggle.html" %}
+    </div>
+
     {% if messages %}
       <div class="toasts" aria-live="polite" aria-atomic="true">
         {% for item in messages %}

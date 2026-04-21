@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Calendar</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}" />
+  {% include "_theme_head.html" %}
 </head>
 <body class="calendar-page">
   <main class="calendar-shell">
@@ -27,11 +27,13 @@
         </div>
 
         <div class="calendar-topbar-actions">
-          <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_dashboard') }}">Dashboard</a>
-          <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_meetings') }}">Agenda</a>
-          <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_availability') }}">Availability</a>
+          {% set minimal = false %}
+          {% include "_theme_toggle.html" %}
+          <a class="btn btn-soft btn-inline" href="{{ url_for('web_dashboard') }}">Dashboard</a>
+          <a class="btn btn-soft btn-inline" href="{{ url_for('web_meetings') }}">Agenda</a>
+          <a class="btn btn-soft btn-inline" href="{{ url_for('web_availability') }}">Availability</a>
           <form method="POST" action="{{ url_for('web_logout') }}">
-            <button class="btn btn-primary" style="width:auto; padding:10px 12px;" type="submit">Log out</button>
+            <button class="btn btn-primary btn-inline" type="submit">Log out</button>
           </form>
         </div>
       </div>
@@ -46,9 +48,9 @@
             </div>
 
             <div class="calendar-month-nav">
-              <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_calendar') }}?{{ calendar_view['prev_query'] }}">Previous</a>
-              <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_calendar') }}?{{ calendar_view['today_query'] }}">Today</a>
-              <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_calendar') }}?{{ calendar_view['next_query'] }}">Next</a>
+              <a class="btn btn-soft btn-inline" href="{{ url_for('web_calendar') }}?{{ calendar_view['prev_query'] }}">Previous</a>
+              <a class="btn btn-soft btn-inline" href="{{ url_for('web_calendar') }}?{{ calendar_view['today_query'] }}">Today</a>
+              <a class="btn btn-soft btn-inline" href="{{ url_for('web_calendar') }}?{{ calendar_view['next_query'] }}">Next</a>
             </div>
           </div>
 
@@ -57,7 +59,7 @@
               <span class="field-label">Jump to month</span>
               <input class="text-input" type="month" name="month" value="{{ calendar_view['selected_month'] }}" />
             </label>
-            <button class="btn btn-primary" style="width:auto; padding:10px 14px;" type="submit">Go</button>
+            <button class="btn btn-primary btn-inline-wide" type="submit">Go</button>
           </form>
 
           <div class="calendar-grid-head">
@@ -193,7 +195,7 @@
       </div>
 
       <div class="calendar-modal-actions">
-        <a class="btn btn-primary" style="width:auto; padding:10px 14px; text-decoration:none;" data-calendar-modal-link href="#">Open details</a>
+        <a class="btn btn-primary btn-inline-wide" data-calendar-modal-link href="#">Open details</a>
       </div>
     </div>
   </div>

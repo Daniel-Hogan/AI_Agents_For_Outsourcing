@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Dashboard</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}" />
+  {% include "_theme_head.html" %}
 </head>
-<body>
+<body class="dashboard-page">
   <main class="page">
     {% if messages %}
       <div class="toasts" aria-live="polite" aria-atomic="true">
@@ -15,20 +15,28 @@
         {% endfor %}
       </div>
     {% endif %}
-    <section class="card">
-      <h2 style="margin:0 0 10px;">Dashboard</h2>
-      <p style="margin:0 0 16px; color: var(--muted);">
-        You are signed in as <strong>{{ email }}</strong>.
-      </p>
+    <section class="card dashboard-card">
+      <div class="dashboard-header">
+        <div>
+          <p class="section-kicker">Control Center</p>
+          <h2 class="page-title">Dashboard</h2>
+          <p class="page-subtle-copy">
+            You are signed in as <strong>{{ email }}</strong>.
+          </p>
+        </div>
 
-      <div style="display:flex; gap:10px; flex-wrap:wrap; margin:0 0 16px;">
-        <a class="btn" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_meetings') }}">Meetings</a>
-        <a class="btn" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_calendar') }}">Calendar</a>
-        <a class="btn" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_availability') }}">Availability</a>
+        {% set minimal = false %}
+        {% include "_theme_toggle.html" %}
+      </div>
+
+      <div class="dashboard-actions">
+        <a class="btn btn-soft btn-inline" href="{{ url_for('web_meetings') }}">Meetings</a>
+        <a class="btn btn-soft btn-inline" href="{{ url_for('web_calendar') }}">Calendar</a>
+        <a class="btn btn-soft btn-inline" href="{{ url_for('web_availability') }}">Availability</a>
       </div>
 
       <form method="POST" action="{{ url_for('web_logout') }}">
-        <button class="btn btn-primary" type="submit">Log out</button>
+        <button class="btn btn-primary btn-inline-wide" type="submit">Log out</button>
       </form>
     </section>
   </main>

@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Meetings</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}" />
+  {% include "_theme_head.html" %}
 </head>
 <body class="meetings-page">
   <main class="page">
@@ -16,27 +16,29 @@
       </div>
     {% endif %}
 
-    <section class="card meetings-card" style="width: min(1080px, 100%);">
+    <section class="card meetings-card shell-card-wide">
       <div class="meetings-header">
         <div class="meetings-header-copy">
           <p class="section-kicker">Plan Confidently</p>
-          <h2 style="margin:0 0 6px;">Meetings</h2>
-          <p style="margin:0; color: var(--muted); font-size: 14px;">
+          <h2 class="page-title page-title-tight">Meetings</h2>
+          <p class="page-subtle-copy">
             Signed in as <strong>{{ email }}</strong>
           </p>
         </div>
 
         <div class="meetings-header-actions">
-          <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_dashboard') }}">Dashboard</a>
-          <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_calendar') }}">Calendar</a>
-          <a class="btn btn-soft" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_availability') }}">Availability</a>
+          {% set minimal = false %}
+          {% include "_theme_toggle.html" %}
+          <a class="btn btn-soft btn-inline" href="{{ url_for('web_dashboard') }}">Dashboard</a>
+          <a class="btn btn-soft btn-inline" href="{{ url_for('web_calendar') }}">Calendar</a>
+          <a class="btn btn-soft btn-inline" href="{{ url_for('web_availability') }}">Availability</a>
           <form method="POST" action="{{ url_for('web_logout') }}">
-            <button class="btn btn-primary" style="width:auto; padding:10px 12px;" type="submit">Log out</button>
+            <button class="btn btn-primary btn-inline" type="submit">Log out</button>
           </form>
         </div>
       </div>
 
-      <hr style="border:none; border-top:1px solid var(--border); margin:16px 0;"/>
+      <hr class="section-divider" />
 
       <section class="composer-panel">
         <div class="composer-header">
@@ -149,12 +151,20 @@
 
           <label class="form-field">
             <span class="field-label">Invite people</span>
-            <textarea
-              class="text-area"
-              name="invitees"
-              placeholder="Invite users by email. Commas, semicolons, or new lines all work."
-              rows="3"
-            >{{ create_form['invitees'] }}</textarea>
+            <div class="invitee-picker" data-invitee-picker-root>
+              <textarea
+                class="text-area"
+                name="invitees"
+                placeholder="Invite users by email. Commas, semicolons, or new lines all work."
+                rows="3"
+                data-invitee-input
+                data-invitee-url="{{ url_for('web_invitee_suggestions') }}"
+              >{{ create_form['invitees'] }}</textarea>
+              <div class="invitee-suggestions" data-invitee-suggestions aria-live="polite" hidden></div>
+            </div>
+            <span class="field-help">
+              Start typing an email handle to see people you usually invite first, then teammates with similar names or handles.
+            </span>
           </label>
 
           <div class="recommendation-panel">
@@ -343,17 +353,11 @@
             </div>
           </div>
 
-          {% if invitable_users %}
-            <p class="registered-users">
-              Registered users: {{ invitable_users|join(", ") }}
-            </p>
-          {% endif %}
-
           <div class="form-actions">
-            <button class="btn btn-soft" style="width:auto; padding:10px 14px;" type="submit" formaction="{{ url_for('web_meetings_availability') }}">
+            <button class="btn btn-soft btn-inline-wide" type="submit" formaction="{{ url_for('web_meetings_availability') }}">
               Check availability
             </button>
-            <button class="btn btn-primary" style="width:auto; padding:10px 14px;" type="submit">
+            <button class="btn btn-primary btn-inline-wide" type="submit">
               Create meeting + invite
             </button>
           </div>
@@ -361,21 +365,21 @@
       </section>
 
       {% if availability_preview %}
-        <div style="margin-top:12px; overflow:auto; border:1px solid var(--border); border-radius:12px;">
-          <table style="width:100%; border-collapse:collapse; min-width: 680px;">
+        <div class="data-table-wrap data-table-wrap-spaced">
+          <table class="data-table">
             <thead>
-              <tr style="background:#f9fafb;">
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Invitee</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Availability</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Conflicts</th>
+              <tr>
+                <th>Invitee</th>
+                <th>Availability</th>
+                <th>Conflicts</th>
               </tr>
             </thead>
             <tbody>
               {% for p in availability_preview %}
-                <tr style="border-top:1px solid var(--border);">
-                  <td style="padding:12px; font-size:14px;">{{ p["email"] }}</td>
-                  <td style="padding:12px; font-size:14px;">{{ p["status"] }}</td>
-                  <td style="padding:12px; font-size:14px;">{{ p["conflicts"] }}</td>
+                <tr>
+                  <td>{{ p["email"] }}</td>
+                  <td>{{ p["status"] }}</td>
+                  <td>{{ p["conflicts"] }}</td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -384,7 +388,7 @@
       {% endif %}
 
       {% if unresolved_recommendation_emails or unresolved_recommendation_user_ids %}
-        <p style="margin:10px 0 0; font-size:13px; color: var(--muted);">
+        <p class="inline-note">
           Unresolved attendees:
           {% if unresolved_recommendation_emails %}
             emails={{ unresolved_recommendation_emails|join(", ") }}
@@ -396,29 +400,29 @@
       {% endif %}
 
       {% if meeting_recommendations %}
-        <div style="margin-top:12px; overflow:auto; border:1px solid var(--border); border-radius:12px;">
-          <table style="width:100%; border-collapse:collapse; min-width: 980px;">
+        <div class="data-table-wrap data-table-wrap-spaced">
+          <table class="data-table data-table-wide">
             <thead>
-              <tr style="background:#f9fafb;">
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Recommended Start</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Recommended End</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Score</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Available</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Busy</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Preferred</th>
-                <th style="text-align:left; padding:12px; font-size:13px; color:#475569;">Outside Pref</th>
+              <tr>
+                <th>Recommended Start</th>
+                <th>Recommended End</th>
+                <th>Score</th>
+                <th>Available</th>
+                <th>Busy</th>
+                <th>Preferred</th>
+                <th>Outside Pref</th>
               </tr>
             </thead>
             <tbody>
               {% for rec in meeting_recommendations %}
-                <tr style="border-top:1px solid var(--border);">
-                  <td style="padding:12px; font-size:14px;">{{ rec["start_time"] }}</td>
-                  <td style="padding:12px; font-size:14px;">{{ rec["end_time"] }}</td>
-                  <td style="padding:12px; font-size:14px;">{{ rec["score"] }}</td>
-                  <td style="padding:12px; font-size:14px;">{{ rec["available_count"] }}</td>
-                  <td style="padding:12px; font-size:14px;">{{ rec["busy_count"] }}</td>
-                  <td style="padding:12px; font-size:14px;">{{ rec["preferred_count"] }}</td>
-                  <td style="padding:12px; font-size:14px;">{{ rec["outside_preference_count"] }}</td>
+                <tr>
+                  <td>{{ rec["start_time"] }}</td>
+                  <td>{{ rec["end_time"] }}</td>
+                  <td>{{ rec["score"] }}</td>
+                  <td>{{ rec["available_count"] }}</td>
+                  <td>{{ rec["busy_count"] }}</td>
+                  <td>{{ rec["preferred_count"] }}</td>
+                  <td>{{ rec["outside_preference_count"] }}</td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -426,7 +430,7 @@
         </div>
       {% endif %}
 
-      <hr style="border:none; border-top:1px solid var(--border); margin:16px 0;"/>
+      <hr class="section-divider" />
 
       <section class="agenda-shell">
         <div class="agenda-toolbar">
@@ -445,9 +449,9 @@
           </div>
 
           <div class="agenda-nav">
-            <a class="btn btn-soft agenda-nav-btn" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_meetings') }}?{{ agenda['prev_query'] }}">Previous day</a>
-            <a class="btn btn-soft agenda-nav-btn" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_meetings') }}?{{ agenda['today_query'] }}">Today</a>
-            <a class="btn btn-soft agenda-nav-btn" style="width:auto; padding:10px 12px; text-decoration:none;" href="{{ url_for('web_meetings') }}?{{ agenda['next_query'] }}">Next day</a>
+            <a class="btn btn-soft btn-inline agenda-nav-btn" href="{{ url_for('web_meetings') }}?{{ agenda['prev_query'] }}">Previous day</a>
+            <a class="btn btn-soft btn-inline agenda-nav-btn" href="{{ url_for('web_meetings') }}?{{ agenda['today_query'] }}">Today</a>
+            <a class="btn btn-soft btn-inline agenda-nav-btn" href="{{ url_for('web_meetings') }}?{{ agenda['next_query'] }}">Next day</a>
           </div>
         </div>
 
@@ -482,11 +486,11 @@
           </label>
 
           <div class="agenda-filter-actions">
-            <button class="btn btn-primary" style="width:auto; padding:10px 14px;" type="submit">
+            <button class="btn btn-primary btn-inline-wide" type="submit">
               Apply
             </button>
 
-            <a class="btn btn-soft" style="width:auto; padding:10px 14px; text-decoration:none;" href="{{ url_for('web_meetings') }}">
+            <a class="btn btn-soft btn-inline-wide" href="{{ url_for('web_meetings') }}">
               Reset
             </a>
           </div>
@@ -571,7 +575,7 @@
 
                   <div class="agenda-card-footer">
                     <span class="agenda-footer-text">{{ item['organizer_email'] }}</span>
-                    <a class="btn btn-soft" style="width:auto; padding:9px 12px; text-decoration:none;" href="{{ url_for('web_meeting_detail', meeting_id=item['id']) }}">
+                    <a class="btn btn-soft btn-inline agenda-detail-link" href="{{ url_for('web_meeting_detail', meeting_id=item['id']) }}">
                       View details
                     </a>
                   </div>

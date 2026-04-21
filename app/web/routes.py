@@ -35,6 +35,7 @@ DAY_OPTIONS = [
     (6, "Saturday"),
 ]
 DAY_NAME_BY_INDEX = {day: name for day, name in DAY_OPTIONS}
+DAY_SHORT_NAME_BY_INDEX = {day: name[:3] for day, name in DAY_OPTIONS}
 WARNING_SEVERITY_ORDER = {"critical": 0, "caution": 1, "info": 2}
 ORIGIN_SOURCE_LABELS = {
     "previous_meeting": "From previous meeting",
@@ -551,19 +552,159 @@ def _load_meetings_with_travel_context(db: Session, *, user: User, q: str, statu
         return fallback_rows
 
 
-def _invitable_users(db: Session, current_user_id: int) -> list[str]:
+def _display_name_for_user(*, first_name: Any, last_name: Any, email: str) -> str:
+    parts = [str(value).strip() for value in (first_name, last_name) if str(value or "").strip()]
+    if parts:
+        return " ".join(parts)
+    return email.split("@", 1)[0]
+
+
+def _initials_for_user(*, first_name: Any, last_name: Any, email: str) -> str:
+    name_parts = [str(value).strip() for value in (first_name, last_name) if str(value or "").strip()]
+    if name_parts:
+        return "".join(part[0].upper() for part in name_parts[:2])
+
+    handle = email.split("@", 1)[0]
+    letters = "".join(char for char in handle if char.isalnum())
+    return (letters[:2] or "U").upper()
+
+
+def _build_invitee_suggestion(row: dict[str, Any], *, kind: str) -> dict[str, Any]:
+    email = str(row["email"]).strip().lower()
+    invite_count = int(row.get("invite_count") or 0)
+    display_name = _display_name_for_user(
+        first_name=row.get("first_name"),
+        last_name=row.get("last_name"),
+        email=email,
+    )
+
+    if kind == "frequent":
+        reason = "Usually invite"
+        detail = f"Invited {invite_count} time{'s' if invite_count != 1 else ''}"
+    else:
+        reason = "Handle match"
+        detail = display_name
+
+    return {
+        "id": int(row["id"]),
+        "email": email,
+        "display_name": display_name,
+        "handle": email.split("@", 1)[0],
+        "initials": _initials_for_user(
+            first_name=row.get("first_name"),
+            last_name=row.get("last_name"),
+            email=email,
+        ),
+        "kind": kind,
+        "reason": reason,
+        "detail": detail,
+        "invite_count": invite_count,
+    }
+
+
+def _frequent_invitee_suggestions(db: Session, *, current_user_id: int, limit: int = 5) -> list[dict[str, Any]]:
     rows = db.execute(
         text(
             """
-            SELECT email
-            FROM users
-            WHERE is_active = true AND id <> :current_user_id
-            ORDER BY email
+            SELECT
+                u.id,
+                u.first_name,
+                u.last_name,
+                u.email,
+                COUNT(*)::int AS invite_count,
+                MAX(m.start_time) AS last_invited_at
+            FROM meetings m
+            JOIN calendars c ON c.id = m.calendar_id
+            JOIN meeting_attendees ma ON ma.meeting_id = m.id
+            JOIN users u ON u.id = ma.user_id
+            WHERE c.owner_type = 'user'
+              AND c.owner_id = :current_user_id
+              AND u.id <> :current_user_id
+              AND u.is_active = true
+              AND ma.status IN ('invited', 'accepted')
+            GROUP BY u.id, u.first_name, u.last_name, u.email
+            ORDER BY COUNT(*) DESC, MAX(m.start_time) DESC, u.email ASC
+            LIMIT :limit
             """
         ),
-        {"current_user_id": current_user_id},
+        {"current_user_id": current_user_id, "limit": limit},
     ).mappings()
-    return [str(row["email"]) for row in rows]
+    return [_build_invitee_suggestion(dict(row), kind="frequent") for row in rows]
+
+
+def _matching_invitee_suggestions(
+    db: Session,
+    *,
+    current_user_id: int,
+    query: str,
+    limit: int = 6,
+) -> list[dict[str, Any]]:
+    query_norm = query.strip().lower()
+    if not query_norm:
+        return []
+
+    rows = db.execute(
+        text(
+            """
+            WITH invite_history AS (
+                SELECT
+                    ma.user_id,
+                    COUNT(*)::int AS invite_count,
+                    MAX(m.start_time) AS last_invited_at
+                FROM meetings m
+                JOIN calendars c ON c.id = m.calendar_id
+                JOIN meeting_attendees ma ON ma.meeting_id = m.id
+                WHERE c.owner_type = 'user'
+                  AND c.owner_id = :current_user_id
+                  AND ma.user_id <> :current_user_id
+                  AND ma.status IN ('invited', 'accepted')
+                GROUP BY ma.user_id
+            )
+            SELECT
+                u.id,
+                u.first_name,
+                u.last_name,
+                u.email,
+                COALESCE(invite_history.invite_count, 0) AS invite_count,
+                CASE
+                    WHEN LOWER(u.email) = :query THEN 0
+                    WHEN LOWER(split_part(u.email, '@', 1)) = :query THEN 1
+                    WHEN LOWER(u.email) LIKE :prefix THEN 2
+                    WHEN LOWER(split_part(u.email, '@', 1)) LIKE :prefix THEN 3
+                    WHEN LOWER(u.first_name) LIKE :prefix THEN 4
+                    WHEN LOWER(u.last_name) LIKE :prefix THEN 5
+                    WHEN LOWER(u.first_name || ' ' || u.last_name) LIKE :prefix THEN 6
+                    ELSE 7
+                END AS match_rank
+            FROM users u
+            LEFT JOIN invite_history ON invite_history.user_id = u.id
+            WHERE u.is_active = true
+              AND u.id <> :current_user_id
+              AND (
+                  LOWER(u.email) LIKE :contains
+                  OR LOWER(split_part(u.email, '@', 1)) LIKE :contains
+                  OR LOWER(u.first_name) LIKE :contains
+                  OR LOWER(u.last_name) LIKE :contains
+                  OR LOWER(u.first_name || ' ' || u.last_name) LIKE :contains
+              )
+            ORDER BY
+                match_rank ASC,
+                COALESCE(invite_history.invite_count, 0) DESC,
+                LOWER(u.first_name) ASC,
+                LOWER(u.last_name) ASC,
+                LOWER(u.email) ASC
+            LIMIT :limit
+            """
+        ),
+        {
+            "current_user_id": current_user_id,
+            "query": query_norm,
+            "prefix": f"{query_norm}%",
+            "contains": f"%{query_norm}%",
+            "limit": limit,
+        },
+    ).mappings()
+    return [_build_invitee_suggestion(dict(row), kind="match") for row in rows]
 
 
 def _overlap_conflict_count(
@@ -741,7 +882,31 @@ def _load_user_preferences(db: Session, user_id: int) -> list[dict[str, Any]]:
 
 
 def _parse_time_value(raw: str) -> time:
-    return time.fromisoformat(raw.strip())
+    parsed = time.fromisoformat(raw.strip())
+    if parsed.second != 0 or parsed.microsecond != 0 or parsed.minute not in {0, 15, 30, 45}:
+        raise ValueError("Availability times must use 15-minute increments.")
+    return parsed.replace(second=0, microsecond=0)
+
+
+def _parse_day_values(raw_values: list[str]) -> list[int]:
+    seen: set[int] = set()
+    parsed_days: list[int] = []
+
+    for raw in raw_values:
+        value = raw.strip()
+        if not value:
+            continue
+
+        day_value = int(value)
+        if day_value < 0 or day_value > 6:
+            raise ValueError("Day of week must be between 0 and 6.")
+        if day_value in seen:
+            continue
+
+        seen.add(day_value)
+        parsed_days.append(day_value)
+
+    return parsed_days
 
 
 def _render_availability_page(
@@ -749,7 +914,7 @@ def _render_availability_page(
     *,
     db: Session,
     user: User,
-    form_data: dict[str, str] | None = None,
+    form_data: dict[str, Any] | None = None,
 ):
     return templates.TemplateResponse(
         request=request,
@@ -759,7 +924,8 @@ def _render_availability_page(
             "messages": _pop_flashes(request),
             "preferences": _load_user_preferences(db, user.id),
             "day_options": DAY_OPTIONS,
-            "form_data": form_data or {"day_of_week": "1", "start_time": "", "end_time": ""},
+            "day_short_names": DAY_SHORT_NAME_BY_INDEX,
+            "form_data": form_data or {"selected_days": [], "start_time": "", "end_time": ""},
         },
     )
 
@@ -846,7 +1012,6 @@ def _render_meetings_page(
             "meeting_recommendations": meeting_recommendations or [],
             "unresolved_recommendation_emails": unresolved_recommendation_emails or [],
             "unresolved_recommendation_user_ids": unresolved_recommendation_user_ids or [],
-            "invitable_users": _invitable_users(db, user.id),
         },
     )
 
@@ -966,6 +1131,18 @@ def locations_autocomplete(request: Request, q: str = "", db: Session = Depends(
     return {"suggestions": suggestions, "status": "ok"}
 
 
+@router.get("/invitees/suggestions", name="web_invitee_suggestions")
+def invitee_suggestions(request: Request, q: str = "", db: Session = Depends(get_db)):
+    user = _current_user(request, db)
+    if user is None:
+        return JSONResponse(status_code=401, content={"frequent": [], "matches": [], "status": "unauthorized"})
+
+    query = q.strip()
+    frequent = _frequent_invitee_suggestions(db, current_user_id=user.id)
+    matches = _matching_invitee_suggestions(db, current_user_id=user.id, query=query)
+    return {"frequent": frequent, "matches": matches, "status": "ok"}
+
+
 @router.get("/dashboard", name="web_dashboard")
 def dashboard(request: Request, db: Session = Depends(get_db)):
     user = _current_user(request, db)
@@ -1000,7 +1177,7 @@ def calendar_page(request: Request, db: Session = Depends(get_db), month: str = 
 @router.post("/availability/add", name="web_availability_add")
 def availability_add(
     request: Request,
-    day_of_week: str = Form(""),
+    day_of_week: list[str] = Form([]),
     start_time: str = Form(""),
     end_time: str = Form(""),
     db: Session = Depends(get_db),
@@ -1011,39 +1188,61 @@ def availability_add(
         return RedirectResponse(url="/", status_code=303)
 
     form_data = {
-        "day_of_week": day_of_week.strip(),
+        "selected_days": [value.strip() for value in day_of_week if value.strip()],
         "start_time": start_time.strip(),
         "end_time": end_time.strip(),
     }
 
     try:
-        day_value = int(day_of_week)
+        day_values = _parse_day_values(day_of_week)
         start_value = _parse_time_value(start_time)
         end_value = _parse_time_value(end_time)
     except Exception:
         _push_flash(request, "error", "Use valid day/start/end values.")
         return _render_availability_page(request, db=db, user=user, form_data=form_data)
 
-    if day_value < 0 or day_value > 6:
-        _push_flash(request, "error", "Day of week must be between 0 and 6.")
+    if not day_values:
+        _push_flash(request, "error", "Pick at least one day.")
         return _render_availability_page(request, db=db, user=user, form_data=form_data)
 
     if end_value <= start_value:
         _push_flash(request, "error", "End time must be after start time.")
         return _render_availability_page(request, db=db, user=user, form_data=form_data)
 
-    overlaps_existing = bool(
+    inserted_days: list[str] = []
+    overlapping_days: list[str] = []
+    for day_value in day_values:
+        overlaps_existing = bool(
+            db.execute(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM time_slot_preferences
+                        WHERE user_id = :user_id
+                          AND day_of_week = :day_of_week
+                          AND start_time < :end_time
+                          AND end_time > :start_time
+                    )
+                    """
+                ),
+                {
+                    "user_id": user.id,
+                    "day_of_week": day_value,
+                    "start_time": start_value,
+                    "end_time": end_value,
+                },
+            ).scalar_one()
+        )
+        if overlaps_existing:
+            overlapping_days.append(DAY_SHORT_NAME_BY_INDEX[day_value])
+            continue
+
         db.execute(
             text(
                 """
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM time_slot_preferences
-                    WHERE user_id = :user_id
-                      AND day_of_week = :day_of_week
-                      AND start_time < :end_time
-                      AND end_time > :start_time
-                )
+                INSERT INTO time_slot_preferences (user_id, day_of_week, start_time, end_time)
+                VALUES (:user_id, :day_of_week, :start_time, :end_time)
                 """
             ),
             {
@@ -1052,29 +1251,25 @@ def availability_add(
                 "start_time": start_value,
                 "end_time": end_value,
             },
-        ).scalar_one()
-    )
-    if overlaps_existing:
-        _push_flash(request, "error", "This slot overlaps an existing preference.")
-        return _render_availability_page(request, db=db, user=user, form_data=form_data)
+        )
+        inserted_days.append(DAY_SHORT_NAME_BY_INDEX[day_value])
 
-    db.execute(
-        text(
-            """
-            INSERT INTO time_slot_preferences (user_id, day_of_week, start_time, end_time)
-            VALUES (:user_id, :day_of_week, :start_time, :end_time)
-            """
-        ),
-        {
-            "user_id": user.id,
-            "day_of_week": day_value,
-            "start_time": start_value,
-            "end_time": end_value,
-        },
-    )
     db.commit()
 
-    _push_flash(request, "success", "Availability preference added.")
+    if inserted_days:
+        _push_flash(
+            request,
+            "success",
+            f"Availability added for {', '.join(inserted_days)}.",
+        )
+    if overlapping_days:
+        _push_flash(
+            request,
+            "warning" if inserted_days else "error",
+            f"Skipped overlapping preferences for {', '.join(overlapping_days)}.",
+        )
+    if not inserted_days:
+        return _render_availability_page(request, db=db, user=user, form_data=form_data)
     return RedirectResponse(url="/availability", status_code=303)
 
 

@@ -1,0 +1,17 @@
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var theme = "light";
+      try {
+        var saved = localStorage.getItem("planner-theme");
+        if (saved === "dark" || saved === "light") {
+          theme = saved;
+        }
+      } catch (error) {
+      }
+      root.dataset.theme = theme;
+      root.style.colorScheme = theme;
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}" />
+  <script defer src="{{ url_for('static', path='theme.js') }}"></script>
