@@ -3,11 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Meetings</title>
+  <title>Meeting Scheduler</title>
   {% include "_theme_head.html" %}
 </head>
 <body class="meetings-page">
-  <main class="page">
+  {% include "_app_header.html" %}
+
+  <main class="page app-page">
     {% if messages %}
       <div class="toasts" aria-live="polite" aria-atomic="true">
         {% for item in messages %}
@@ -20,21 +22,13 @@
       <div class="meetings-header">
         <div class="meetings-header-copy">
           <p class="section-kicker">Plan Confidently</p>
-          <h2 class="page-title page-title-tight">Meetings</h2>
+          <h2 class="page-title page-title-tight">Meeting Scheduler</h2>
           <p class="page-subtle-copy">
             Signed in as <strong>{{ email }}</strong>
           </p>
         </div>
-
         <div class="meetings-header-actions">
-          {% set minimal = false %}
-          {% include "_theme_toggle.html" %}
-          <a class="btn btn-soft btn-inline" href="{{ url_for('web_dashboard') }}">Dashboard</a>
-          <a class="btn btn-soft btn-inline" href="{{ url_for('web_calendar') }}">Calendar</a>
-          <a class="btn btn-soft btn-inline" href="{{ url_for('web_availability') }}">Availability</a>
-          <form method="POST" action="{{ url_for('web_logout') }}">
-            <button class="btn btn-primary btn-inline" type="submit">Log out</button>
-          </form>
+          <a class="btn btn-soft btn-inline" href="{{ url_for('web_meetings_overview') }}">Open meetings overview</a>
         </div>
       </div>
 
@@ -57,6 +51,23 @@
           <input type="hidden" name="mine" value="{% if mine %}1{% endif %}" />
           <input type="hidden" name="day" value="{{ agenda['selected_day'] }}" />
 
+          <section class="meeting-type-switcher" data-meeting-type-toggle>
+            <div class="meeting-type-switcher-header">
+              <span class="field-label">Meeting format</span>
+              <p class="field-help">Use in-person meetings for rooms and travel-aware warnings, or switch to remote for links and online instructions.</p>
+            </div>
+            <div class="meeting-type-switcher-options">
+              <label class="meeting-type-switcher-option">
+                <input type="radio" name="meeting_type" value="in_person" {% if create_form['meeting_type'] != 'virtual' %}checked{% endif %} />
+                <span>In person</span>
+              </label>
+              <label class="meeting-type-switcher-option">
+                <input type="radio" name="meeting_type" value="virtual" {% if create_form['meeting_type'] == 'virtual' %}checked{% endif %} />
+                <span>Remote</span>
+              </label>
+            </div>
+          </section>
+
           <div class="form-grid form-grid-wide">
             <label class="form-field">
               <span class="field-label">Meeting title</span>
@@ -71,7 +82,7 @@
 
             <label class="form-field">
               <span class="field-label">
-                Location
+                <span data-meeting-location-label>Location</span>
                 <span class="field-pill">Optional</span>
               </span>
               <div class="location-autocomplete" data-location-autocomplete-root>
@@ -83,13 +94,14 @@
                   autocomplete="off"
                   data-location-autocomplete-input
                   data-autocomplete-url="{{ url_for('web_locations_autocomplete') }}"
+                  data-meeting-location-input
                 />
                 <input type="hidden" name="location_raw" value="{{ create_form['location_raw'] }}" data-location-raw />
                 <input type="hidden" name="location_latitude" value="{{ create_form['location_latitude'] }}" data-location-latitude />
                 <input type="hidden" name="location_longitude" value="{{ create_form['location_longitude'] }}" data-location-longitude />
                 <div class="location-suggestions" data-location-suggestions hidden></div>
               </div>
-              <span class="field-help">Choose a suggestion to save exact coordinates for travel checks.</span>
+              <span class="field-help" data-meeting-location-help>Choose a suggestion to save exact coordinates for travel checks.</span>
             </label>
           </div>
 

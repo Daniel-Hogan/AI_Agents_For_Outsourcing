@@ -31,3 +31,13 @@ class MeResponse(BaseModel):
     last_name: str
     email: EmailStr
     phone: str | None = None
+    avatar_color: str
+
+
+class UpdateProfileRequest(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    email: EmailStr | None = None
+    avatar_color: str | None = None
+    current_password: str | None = None
+    new_password: str | None = Field(default=None, min_length=8)

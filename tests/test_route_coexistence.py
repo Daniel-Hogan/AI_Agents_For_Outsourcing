@@ -59,3 +59,17 @@ def test_availability_page_and_api_can_coexist(client):
     )
     assert api_post_response.status_code == 200, api_post_response.text
     assert len(api_post_response.json()) == 1
+
+
+def test_groups_page_and_api_can_coexist(client):
+    token = _register_user(client, email="linus@example.com")
+    _web_login(client, email="linus@example.com")
+
+    page_response = client.get("/groups")
+    assert page_response.status_code == 200, page_response.text
+    assert page_response.headers["content-type"].startswith("text/html")
+
+    api_response = client.get("/groups/", headers=_auth_headers(token))
+    assert api_response.status_code == 200, api_response.text
+    assert api_response.headers["content-type"].startswith("application/json")
+    assert api_response.json() == []

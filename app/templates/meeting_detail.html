@@ -7,7 +7,9 @@
   {% include "_theme_head.html" %}
 </head>
 <body class="detail-page">
-  <main class="page">
+  {% include "_app_header.html" %}
+
+  <main class="page app-page">
     {% if messages %}
       <div class="toasts" aria-live="polite" aria-atomic="true">
         {% for item in messages %}
@@ -26,9 +28,6 @@
             Availability preferences
           </a>
         </div>
-
-        {% set minimal = false %}
-        {% include "_theme_toggle.html" %}
       </div>
 
       <h2 class="page-title page-title-tight">{{ meeting["title"] }}</h2>

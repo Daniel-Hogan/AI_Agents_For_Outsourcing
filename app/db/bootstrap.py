@@ -17,10 +17,47 @@ SCHEMA_PATCHES = (
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS default_location TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS default_location_latitude DOUBLE PRECISION",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS default_location_longitude DOUBLE PRECISION",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_color TEXT NOT NULL DEFAULT 'blue'",
     "ALTER TABLE meetings ADD COLUMN IF NOT EXISTS location_raw TEXT",
     "ALTER TABLE meetings ADD COLUMN IF NOT EXISTS location_latitude DOUBLE PRECISION",
     "ALTER TABLE meetings ADD COLUMN IF NOT EXISTS location_longitude DOUBLE PRECISION",
     "ALTER TABLE meeting_attendees ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+    """
+    CREATE TABLE IF NOT EXISTS notification_preferences (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      email_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      in_app_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      meeting_reminders_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      group_activity_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      weekly_digest_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      digest_frequency TEXT NOT NULL DEFAULT 'weekly' CHECK (digest_frequency IN ('daily', 'weekly')),
+      quiet_hours_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      quiet_hours_start TIME,
+      quiet_hours_end TIME,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS notifications (
+      id BIGSERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      meeting_id INTEGER REFERENCES meetings(id) ON DELETE CASCADE,
+      channel TEXT NOT NULL CHECK (channel IN ('email', 'in_app')),
+      type TEXT NOT NULL CHECK (type IN ('invite', 'cancel', 'update', 'rsvp_update', 'reminder')),
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'failed', 'read', 'skipped')),
+      provider_message_id TEXT,
+      error_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      sent_at TIMESTAMPTZ,
+      read_at TIMESTAMPTZ
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_notification_preferences_user_id ON notification_preferences(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_notifications_meeting_id ON notifications(meeting_id)",
     """
     CREATE TABLE IF NOT EXISTS location_cache (
       location_key TEXT PRIMARY KEY,
@@ -54,10 +91,26 @@ SCHEMA_PATCHES = (
         WHEN duplicate_object THEN NULL;
     END $$;
     """,
+    """
+    DO $$
+    BEGIN
+        ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+
+        ALTER TABLE notifications
+        ADD CONSTRAINT notifications_type_check
+        CHECK (type IN ('invite', 'cancel', 'update', 'rsvp_update', 'reminder'));
+    EXCEPTION
+        WHEN duplicate_object THEN NULL;
+    END $$;
+    """,
 )
+
+
+BOOTSTRAP_LOCK_ID = 2147483001
 
 
 def ensure_runtime_schema(db_engine: Engine = engine) -> None:
     with db_engine.begin() as conn:
+        conn.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": BOOTSTRAP_LOCK_ID})
         for statement in SCHEMA_PATCHES:
             conn.execute(text(statement))

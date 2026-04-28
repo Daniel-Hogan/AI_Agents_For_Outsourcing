@@ -5,6 +5,7 @@ CREATE TABLE users (
   last_name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   phone TEXT,
+  avatar_color TEXT NOT NULL DEFAULT 'blue',
   default_location TEXT,
   default_location_latitude DOUBLE PRECISION,
   default_location_longitude DOUBLE PRECISION,
@@ -121,6 +122,37 @@ CREATE TABLE meeting_attendees (
   PRIMARY KEY (meeting_id, user_id)
 );
 
+CREATE TABLE notification_preferences (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  email_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  in_app_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  meeting_reminders_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  group_activity_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  weekly_digest_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  digest_frequency TEXT NOT NULL DEFAULT 'weekly' CHECK (digest_frequency IN ('daily', 'weekly')),
+  quiet_hours_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  quiet_hours_start TIME,
+  quiet_hours_end TIME,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE notifications (
+  id BIGSERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  meeting_id INTEGER REFERENCES meetings(id) ON DELETE CASCADE,
+  channel TEXT NOT NULL CHECK (channel IN ('email', 'in_app')),
+  type TEXT NOT NULL CHECK (type IN ('invite', 'cancel', 'update', 'rsvp_update', 'reminder')),
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'failed', 'read', 'skipped')),
+  provider_message_id TEXT,
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  sent_at TIMESTAMPTZ,
+  read_at TIMESTAMPTZ
+);
+
 CREATE INDEX idx_time_slot_preferences_user_id ON time_slot_preferences(user_id);
 CREATE INDEX idx_group_memberships_group_id ON group_memberships(group_id);
 CREATE INDEX idx_user_calendars_user_id ON user_calendars(user_id);
@@ -128,3 +160,6 @@ CREATE INDEX idx_meetings_calendar_id ON meetings(calendar_id);
 CREATE INDEX idx_meeting_attendees_user_id ON meeting_attendees(user_id);
 CREATE INDEX idx_auth_identities_user_id ON auth_identities(user_id);
 CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+CREATE INDEX idx_notification_preferences_user_id ON notification_preferences(user_id);
+CREATE INDEX idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX idx_notifications_meeting_id ON notifications(meeting_id);

@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{{ group['name'] }} | Groups</title>
+  {% include "_theme_head.html" %}
+</head>
+<body class="groups-page">
+  {% include "_app_header.html" %}
+
+  <main class="page app-page">
+    {% if messages %}
+      <div class="toasts" aria-live="polite" aria-atomic="true">
+        {% for item in messages %}
+          <div class="toast toast-{{ item['category'] }}">{{ item["message"] }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <section class="card groups-card shell-card-wide">
+      <div class="group-workspace-header">
+        <div class="group-workspace-copy">
+          <p class="section-kicker">Team Workspace</p>
+          <h2 class="page-title page-title-tight">{{ group['name'] }}</h2>
+          <p class="page-subtle-copy">
+            {{ group['description'] or 'No description provided yet.' }}
+          </p>
+        </div>
+
+        <div class="group-workspace-actions">
+          <a class="btn btn-soft btn-inline" href="{{ url_for('web_groups') }}">Back to all groups</a>
+        </div>
+      </div>
+
+      <div class="group-metric-grid">
+        <article class="group-metric-card">
+          <span class="field-label">Join Token</span>
+          <code>{{ group['token'] }}</code>
+        </article>
+        <article class="group-metric-card">
+          <span class="field-label">Your Role</span>
+          <strong>{{ group_membership['role_label'] }}</strong>
+        </article>
+        <article class="group-metric-card">
+          <span class="field-label">Roster</span>
+          <strong>{{ group['member_count'] }} member{% if group['member_count'] != 1 %}s{% endif %}</strong>
+        </article>
+        <article class="group-metric-card">
+          <span class="field-label">Leads</span>
+          <strong>{{ group['manager_count'] }} owner / manager{% if group['manager_count'] != 1 %}s{% endif %}</strong>
+        </article>
+      </div>
+
+      <div class="group-workspace-layout">
+        {% if group_can_manage %}
+          <section class="settings-panel group-management-panel">
+            <div class="settings-section-header">
+              <div>
+                <h3>Invite People</h3>
+                <p>Use the same people searcher from the meeting scheduler to add members or managers directly to the group.</p>
+              </div>
+            </div>
+
+            <form method="POST" action="{{ url_for('web_groups_invite', group_id=group['id']) }}" class="settings-form-stack">
+              <input type="hidden" name="month" value="{{ group_calendar_view['selected_month'] }}" />
+              {% if selected_member %}
+                <input type="hidden" name="member_id" value="{{ selected_member['id'] }}" />
+              {% endif %}
+
+              <label class="form-field">
+                <span class="field-label">People</span>
+                <div class="invitee-picker" data-invitee-picker-root>
+                  <textarea
+                    class="text-area"
+                    name="invitees"
+                    rows="3"
+                    placeholder="Invite users by email. Commas, semicolons, or new lines all work."
+                    data-invitee-input
+                    data-invitee-url="{{ url_for('web_invitee_suggestions') }}"
+                  >{{ group_invite_form['invitees'] }}</textarea>
+                  <div class="invitee-suggestions" data-invitee-suggestions aria-live="polite" hidden></div>
+                </div>
+                <span class="field-help">Type a handle or email fragment to surface teammates you already work with.</span>
+              </label>
+
+              <label class="form-field">
+                <span class="field-label">Invite As</span>
+                <select class="text-input" name="role">
+                  <option value="member" {% if group_invite_form['role'] != 'admin' %}selected{% endif %}>Member</option>
+                  <option value="admin" {% if group_invite_form['role'] == 'admin' %}selected{% endif %}>Manager</option>
+                </select>
+              </label>
+
+              <div class="settings-actions">
+                <button class="btn btn-primary btn-inline-wide" type="submit">Add To Group</button>
+              </div>
+            </form>
+          </section>
+        {% endif %}
+
+        <section class="settings-panel group-roster-panel">
+          <div class="settings-section-header">
+            <div>
+              <h3>Roster</h3>
+              <p>Click a teammate to inspect their upcoming meetings and weekly availability.</p>
+            </div>
+          </div>
+
+          <div class="group-roster-list">
+            {% for member in group_roster %}
+              <article class="group-roster-row{% if selected_member and selected_member['id'] == member['id'] %} is-active{% endif %}">
+                <div class="group-roster-member">
+                  <span class="group-roster-avatar" aria-hidden="true">{{ member['initials'] }}</span>
+
+                  <div class="group-roster-copy">
+                    {% if group_can_manage %}
+                      <a class="group-member-link" href="{{ url_for('web_group_detail', group_id=group['id']) }}?month={{ group_calendar_view['selected_month'] }}&member_id={{ member['id'] }}">
+                        {{ member['display_name'] }}
+                      </a>
+                    {% else %}
+                      <strong>{{ member['display_name'] }}</strong>
+                    {% endif %}
+                    <small>{{ member['email'] }}</small>
+                  </div>
+                </div>
+
+                <div class="group-roster-meta">
+                  <span class="group-role-pill">{{ member['role_label'] }}</span>
+                  <span>{{ member['upcoming_meeting_count'] }} meeting{% if member['upcoming_meeting_count'] != 1 %}s{% endif %}</span>
+                  <span>{{ member['preference_count'] }} availability block{% if member['preference_count'] != 1 %}s{% endif %}</span>
+                </div>
+
+                {% if group_can_manage %}
+                  <div class="group-roster-actions">
+                    {% if member['role'] != 'owner' and member['id'] != group_membership['user_id'] %}
+                      <form method="POST" action="{{ url_for('web_groups_update_member_role', group_id=group['id'], target_user_id=member['id']) }}">
+                        <input type="hidden" name="month" value="{{ group_calendar_view['selected_month'] }}" />
+                        {% if selected_member %}
+                          <input type="hidden" name="member_id" value="{{ selected_member['id'] }}" />
+                        {% endif %}
+                        <input type="hidden" name="role" value="{% if member['role'] == 'admin' %}member{% else %}admin{% endif %}" />
+                        <button class="btn btn-soft btn-inline" type="submit">
+                          {% if member['role'] == 'admin' %}Make member{% else %}Make manager{% endif %}
+                        </button>
+                      </form>
+
+                      <form method="POST" action="{{ url_for('web_groups_remove_member', group_id=group['id'], target_user_id=member['id']) }}">
+                        <input type="hidden" name="month" value="{{ group_calendar_view['selected_month'] }}" />
+                        {% if selected_member %}
+                          <input type="hidden" name="member_id" value="{{ selected_member['id'] }}" />
+                        {% endif %}
+                        <button class="btn btn-soft btn-inline group-remove-btn" type="submit">Remove</button>
+                      </form>
+                    {% endif %}
+                  </div>
+                {% endif %}
+              </article>
+            {% endfor %}
+          </div>
+        </section>
+      </div>
+
+      <section class="calendar-board group-calendar-board">
+        <div class="calendar-topbar">
+          <div>
+            <p class="calendar-kicker">Group Calendar</p>
+            <h1>{{ group_calendar_view['month_label'] }}</h1>
+            <p class="calendar-topbar-copy">
+              {{ group_calendar_view['meeting_count_label'] }} connected to this group for the selected month.
+            </p>
+          </div>
+        </div>
+
+        <div class="calendar-layout">
+          <section class="calendar-panel">
+            <div class="calendar-panel-header">
+              <div>
+                <p class="calendar-kicker">Overview</p>
+                <h2>{{ group_calendar_view['month_label'] }}</h2>
+                <p class="calendar-panel-copy">This calendar rolls up every upcoming meeting that includes at least one member of the group.</p>
+              </div>
+
+              <div class="calendar-month-nav">
+                <a class="btn btn-soft btn-inline" href="{{ url_for('web_group_detail', group_id=group['id']) }}?{{ group_calendar_view['prev_query'] }}{% if selected_member %}&member_id={{ selected_member['id'] }}{% endif %}">Previous</a>
+                <a class="btn btn-soft btn-inline" href="{{ url_for('web_group_detail', group_id=group['id']) }}?{{ group_calendar_view['today_query'] }}{% if selected_member %}&member_id={{ selected_member['id'] }}{% endif %}">Today</a>
+                <a class="btn btn-soft btn-inline" href="{{ url_for('web_group_detail', group_id=group['id']) }}?{{ group_calendar_view['next_query'] }}{% if selected_member %}&member_id={{ selected_member['id'] }}{% endif %}">Next</a>
+              </div>
+            </div>
+
+            <form method="GET" action="{{ url_for('web_group_detail', group_id=group['id']) }}" class="calendar-month-form">
+              <label class="form-field">
+                <span class="field-label">Jump to month</span>
+                <input class="text-input" type="month" name="month" value="{{ group_calendar_view['selected_month'] }}" />
+              </label>
+              {% if selected_member %}
+                <input type="hidden" name="member_id" value="{{ selected_member['id'] }}" />
+              {% endif %}
+              <button class="btn btn-primary btn-inline-wide" type="submit">Go</button>
+            </form>
+
+            <div class="calendar-grid-head">
+              <span>Sunday</span>
+              <span>Monday</span>
+              <span>Tuesday</span>
+              <span>Wednesday</span>
+              <span>Thursday</span>
+              <span>Friday</span>
+              <span>Saturday</span>
+            </div>
+
+            <div class="calendar-grid">
+              {% for week in group_calendar_view['weeks'] %}
+                {% for day in week %}
+                  <article class="calendar-day{% if not day['is_current_month'] %} calendar-day-muted{% endif %}{% if day['is_today'] %} calendar-day-today{% endif %}">
+                    <div class="calendar-day-header">
+                      <span class="calendar-day-number">{{ day['day_number'] }}</span>
+                      {% if day['meeting_count'] %}
+                        <span class="calendar-day-count">{{ day['meeting_count'] }}</span>
+                      {% endif %}
+                    </div>
+
+                    <div class="calendar-day-events">
+                      {% for meeting in day['meetings'] %}
+                        <a class="calendar-event calendar-event-{{ meeting['color_token'] }} group-calendar-link" href="{{ meeting['detail_url'] }}">
+                          <span class="calendar-event-time">{{ meeting['start_time_label'] }}</span>
+                          <span class="calendar-event-title">{{ meeting['title'] }}</span>
+                        </a>
+                      {% endfor %}
+
+                      {% if day['more_count'] %}
+                        <p class="calendar-day-more">+{{ day['more_count'] }} more</p>
+                      {% endif %}
+                    </div>
+                  </article>
+                {% endfor %}
+              {% endfor %}
+            </div>
+          </section>
+
+          <aside class="calendar-sidebar">
+            <div class="calendar-sidebar-header">
+              <p class="calendar-kicker">Upcoming</p>
+              <h3>{{ group_calendar_view['meeting_count_label'] }}</h3>
+            </div>
+
+            {% if group_calendar_view['is_empty'] %}
+              <div class="calendar-sidebar-empty">
+                <h4>No upcoming group meetings</h4>
+                <p>The group does not have any future meetings scheduled yet.</p>
+              </div>
+            {% else %}
+              <div class="calendar-sidebar-list">
+                {% for meeting_group in group_calendar_view['grouped_meetings'] %}
+                  <section class="calendar-sidebar-group">
+                    <p class="calendar-sidebar-label">{{ meeting_group['label'] }}</p>
+                    <div class="calendar-sidebar-cards">
+                      {% for meeting in meeting_group['meetings'] %}
+                        <a class="calendar-list-card calendar-list-card-{{ meeting['color_token'] }} group-calendar-link" href="{{ meeting['detail_url'] }}">
+                          <span class="calendar-list-card-time">{{ meeting['time_range_label'] }}</span>
+                          <strong>{{ meeting['title'] }}</strong>
+                          <span class="calendar-list-card-location">{{ meeting['location_label'] }}</span>
+                        </a>
+                      {% endfor %}
+                    </div>
+                  </section>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </aside>
+        </div>
+      </section>
+
+      {% if group_can_manage %}
+        <section class="settings-panel group-member-insights">
+          <div class="settings-section-header">
+            <div>
+              <h3>Member Insights</h3>
+              <p>Open any teammate from the roster to compare their upcoming schedule with the availability windows they have already set.</p>
+            </div>
+          </div>
+
+          {% if selected_member %}
+            <div class="group-member-header">
+              <div class="group-roster-member">
+                <span class="group-roster-avatar" aria-hidden="true">{{ selected_member['initials'] }}</span>
+                <div class="group-roster-copy">
+                  <strong>{{ selected_member['display_name'] }}</strong>
+                  <small>{{ selected_member['email'] }}</small>
+                </div>
+              </div>
+              <span class="group-role-pill">{{ selected_member['role_label'] }}</span>
+            </div>
+
+            <div class="group-member-insight-grid">
+              <section class="settings-subpanel">
+                <div class="settings-section-header">
+                  <div>
+                    <h4 class="settings-subpanel-title">Upcoming Meetings</h4>
+                    <p>{{ selected_member_meetings|length }} meeting{% if selected_member_meetings|length != 1 %}s{% endif %} on the horizon.</p>
+                  </div>
+                </div>
+
+                {% if selected_member_meetings %}
+                  <div class="group-member-meetings">
+                    {% for meeting in selected_member_meetings %}
+                      <article class="group-member-meeting-card">
+                        <div class="group-member-meeting-header">
+                          <div>
+                            <h5>{{ meeting['title'] }}</h5>
+                            <p>{{ meeting['day_label'] }} &middot; {{ meeting['time_range_label'] }}</p>
+                          </div>
+                          <span class="group-role-pill">{{ meeting['role_label'] }}</span>
+                        </div>
+                        <p class="group-member-meeting-location">{{ meeting['location_label'] }}</p>
+                        <a class="detail-link detail-link-accent" href="{{ url_for('web_meeting_detail', meeting_id=meeting['id']) }}">Open meeting details</a>
+                      </article>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <div class="availability-empty-state group-member-empty">
+                    <p class="section-kicker">Clear Schedule</p>
+                    <h3>No upcoming meetings</h3>
+                    <p>This teammate does not have any future meetings scheduled right now.</p>
+                  </div>
+                {% endif %}
+              </section>
+
+              <section class="settings-subpanel">
+                <div class="settings-section-header">
+                  <div>
+                    <h4 class="settings-subpanel-title">Weekly Availability</h4>
+                    <p>
+                      {% if selected_member_availability['has_preferences'] %}
+                        Active on {{ selected_member_availability['active_days_label'] }}.
+                      {% else %}
+                        No availability preferences saved yet.
+                      {% endif %}
+                    </p>
+                  </div>
+                </div>
+
+                {% if selected_member_availability['has_preferences'] %}
+                  <div class="group-availability-grid-wrap">
+                    <div class="group-availability-grid">
+                      <div class="group-availability-header group-availability-time-head">Time</div>
+                      {% for _day_idx, day_name in day_options %}
+                        <div class="group-availability-header">{{ day_name[:3] }}</div>
+                      {% endfor %}
+
+                      {% for row in selected_member_availability['rows'] %}
+                        <div class="group-availability-time">{{ row['label'] }}</div>
+                        {% for cell in row['cells'] %}
+                          <div class="group-availability-cell{% if cell['is_available'] %} is-available{% endif %}"></div>
+                        {% endfor %}
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% else %}
+                  <div class="availability-empty-state group-member-empty">
+                    <p class="section-kicker">No Preferences</p>
+                    <h3>Nothing has been set yet</h3>
+                    <p>Once this person adds weekly availability, it will appear here in a when2meet-style grid.</p>
+                  </div>
+                {% endif %}
+              </section>
+            </div>
+          {% else %}
+            <div class="availability-empty-state group-member-empty">
+              <p class="section-kicker">Pick A Teammate</p>
+              <h3>Select someone from the roster</h3>
+              <p>The right-hand workspace will show their future meetings and weekly availability here.</p>
+            </div>
+          {% endif %}
+        </section>
+      {% endif %}
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', path='meetings.js') }}"></script>
+</body>
+</html>

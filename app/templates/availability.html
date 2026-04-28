@@ -8,7 +8,9 @@
   <script defer src="{{ url_for('static', path='availability.js') }}"></script>
 </head>
 <body class="availability-page">
-  <main class="page">
+  {% include "_app_header.html" %}
+
+  <main class="page app-page">
     {% if messages %}
       <div class="toasts" aria-live="polite" aria-atomic="true">
         {% for item in messages %}
@@ -26,16 +28,6 @@
             Signed in as <strong>{{ email }}</strong>
           </p>
         </div>
-        <div class="availability-header-actions">
-          {% set minimal = false %}
-          {% include "_theme_toggle.html" %}
-          <a class="btn btn-soft btn-inline" href="{{ url_for('web_dashboard') }}">Dashboard</a>
-          <a class="btn btn-soft btn-inline" href="{{ url_for('web_calendar') }}">Calendar</a>
-          <a class="btn btn-soft btn-inline" href="{{ url_for('web_meetings') }}">Meetings</a>
-          <form method="POST" action="{{ url_for('web_logout') }}">
-            <button class="btn btn-primary btn-inline" type="submit">Log out</button>
-          </form>
-        </div>
       </div>
 
       <hr class="availability-divider" />
@@ -45,128 +37,7 @@
           Add the time ranges when you are usually available. Meeting checks use these preferences alongside your existing meeting conflicts.
         </p>
       </section>
-
-      <form method="POST" action="{{ url_for('web_availability_add') }}" class="availability-form">
-        <div class="availability-form-grid">
-          <fieldset class="availability-field-card availability-day-card">
-            <legend class="availability-field-label">Days</legend>
-            <div class="availability-day-toggle-grid">
-              {% for day_idx, day_name in day_options %}
-                <label class="availability-day-toggle">
-                  <input
-                    type="checkbox"
-                    name="day_of_week"
-                    value="{{ day_idx }}"
-                    {% if (day_idx|string) in form_data["selected_days"] %}checked{% endif %}
-                  />
-                  <span>{{ day_short_names[day_idx] }}</span>
-                </label>
-              {% endfor %}
-            </div>
-            <span class="availability-field-help">Pick one or more days to add the same availability window all at once.</span>
-          </fieldset>
-
-          <label class="availability-field-card availability-time-card availability-time-card-start" data-time-picker>
-            <span class="availability-field-label">Start</span>
-            <div class="availability-time-native-wrapper" data-time-native-wrapper>
-              <input
-                class="availability-time-input"
-                type="time"
-                name="start_time"
-                value="{{ form_data['start_time'] }}"
-                required
-                step="900"
-                data-time-native
-              />
-            </div>
-            <div class="availability-time-enhanced" data-time-enhanced hidden>
-              <div class="availability-time-controls">
-                <select aria-label="Start hour" data-time-hour></select>
-                <span>:</span>
-                <select aria-label="Start minute" data-time-minute></select>
-                <select aria-label="Start period" data-time-period></select>
-              </div>
-            </div>
-            <span class="availability-field-help">Click anywhere in this card to open the time picker. Minutes stay in 15-minute steps.</span>
-          </label>
-
-          <label class="availability-field-card availability-time-card availability-time-card-end" data-time-picker>
-            <span class="availability-field-label">End</span>
-            <div class="availability-time-native-wrapper" data-time-native-wrapper>
-              <input
-                class="availability-time-input"
-                type="time"
-                name="end_time"
-                value="{{ form_data['end_time'] }}"
-                required
-                step="900"
-                data-time-native
-              />
-            </div>
-            <div class="availability-time-enhanced" data-time-enhanced hidden>
-              <div class="availability-time-controls">
-                <select aria-label="End hour" data-time-hour></select>
-                <span>:</span>
-                <select aria-label="End minute" data-time-minute></select>
-                <select aria-label="End period" data-time-period></select>
-              </div>
-            </div>
-            <span class="availability-field-help">Opens the native time wheel or picker for quick adjustment in quarter-hour steps.</span>
-          </label>
-        </div>
-
-        <div class="availability-form-actions">
-          <button class="btn btn-primary btn-inline-wide" type="submit">
-            Add preference
-          </button>
-        </div>
-      </form>
-
-      {% if preferences|length == 0 %}
-        <section class="availability-empty-state">
-          <p class="section-kicker">Nothing Yet</p>
-          <h3>No availability preferences added yet</h3>
-          <p>Pick the days and time ranges you usually prefer, then save them here for future meeting checks.</p>
-        </section>
-      {% else %}
-        <section class="availability-list-card">
-          <div class="availability-list-header">
-            <div>
-              <p class="section-kicker">Saved Preferences</p>
-              <h3>Your weekly windows</h3>
-            </div>
-            <p class="availability-list-copy">{{ preferences|length }} saved preference{% if preferences|length != 1 %}s{% endif %}</p>
-          </div>
-
-          <div class="availability-table-wrap">
-            <table class="availability-table">
-              <thead>
-                <tr>
-                  <th>Day</th>
-                  <th>Start</th>
-                  <th>End</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for pref in preferences %}
-                  <tr>
-                    <td>{{ pref["day_name"] }}</td>
-                    <td>{{ pref["start_time"] }}</td>
-                    <td>{{ pref["end_time"] }}</td>
-                    <td>
-                      <form method="POST" action="{{ url_for('web_availability_delete') }}">
-                        <input type="hidden" name="preference_id" value="{{ pref['id'] }}" />
-                        <button class="btn btn-soft btn-inline availability-delete-btn" type="submit">Delete</button>
-                      </form>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      {% endif %}
+      {% include "_availability_manager.html" %}
     </section>
   </main>
 </body>

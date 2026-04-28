@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Settings</title>
+  {% include "_theme_head.html" %}
+  <script defer src="{{ url_for('static', path='availability.js') }}"></script>
+</head>
+<body class="settings-page">
+  {% include "_app_header.html" %}
+
+  <main class="page app-page">
+    {% if messages %}
+      <div class="toasts" aria-live="polite" aria-atomic="true">
+        {% for item in messages %}
+          <div class="toast toast-{{ item['category'] }}">{{ item["message"] }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <section class="card settings-card shell-card-wide">
+      <div class="settings-page-header">
+        <div>
+          <p class="section-kicker">Profile Settings</p>
+          <h2 class="page-title page-title-tight">Settings</h2>
+          <p class="page-subtle-copy">
+            Signed in as <strong>{{ email }}</strong>. Update your account preferences, working hours, and notification behavior here.
+          </p>
+        </div>
+      </div>
+
+      <div class="settings-layout">
+        <section class="settings-panel settings-profile-panel">
+          <div class="settings-section-header">
+            <div>
+              <h3>Profile</h3>
+              <p>Keep your account details current and update your password when needed.</p>
+            </div>
+          </div>
+
+          <form method="POST" action="{{ url_for('web_settings_profile') }}" class="settings-form-stack">
+            <div class="settings-profile-hero">
+              <div class="settings-avatar" data-avatar-preview style="background: {{ profile_avatar_color_hex }};">{{ current_user_initials }}</div>
+              <div class="settings-profile-copy">
+                <strong>{{ current_user_name }}</strong>
+                <span>{{ current_user_email }}</span>
+              </div>
+            </div>
+
+            <div class="settings-subsection">
+              <h4>Avatar Color</h4>
+              <p>Choose the color used for your profile circle in the header and settings page.</p>
+            </div>
+
+            <div class="settings-color-grid">
+              {% for option in avatar_color_options %}
+                <label class="avatar-color-option">
+                  <input
+                    type="radio"
+                    name="avatar_color"
+                    value="{{ option['id'] }}"
+                    data-avatar-color-input
+                    data-avatar-color-value="{{ option['hex'] }}"
+                    data-avatar-color-name="{{ option['label'] }}"
+                    {% if profile_form['avatar_color'] == option['id'] %}checked{% endif %}
+                  />
+                  <span class="avatar-color-swatch" style="background-color: {{ option['hex'] }};" aria-hidden="true"></span>
+                  <span class="avatar-color-name">{{ option["label"] }}</span>
+                </label>
+              {% endfor %}
+            </div>
+
+            <div class="settings-form-grid">
+              <label class="form-field">
+                <span class="field-label">First Name</span>
+                <input class="text-input" type="text" name="first_name" value="{{ profile_form['first_name'] }}" required />
+              </label>
+
+              <label class="form-field">
+                <span class="field-label">Last Name</span>
+                <input class="text-input" type="text" name="last_name" value="{{ profile_form['last_name'] }}" required />
+              </label>
+            </div>
+
+            <label class="form-field">
+              <span class="field-label">Email</span>
+              <input class="text-input" type="email" name="email" value="{{ profile_form['email'] }}" required />
+            </label>
+
+            <div class="settings-subsection">
+              <h4>Change Password</h4>
+              <p>Leave these blank if you are not changing your password today.</p>
+            </div>
+
+            <div class="settings-form-grid">
+              <label class="form-field">
+                <span class="field-label">Current Password</span>
+                <input class="text-input" type="password" name="current_password" value="" />
+              </label>
+
+              <label class="form-field">
+                <span class="field-label">New Password</span>
+                <input class="text-input" type="password" name="new_password" value="" minlength="8" />
+              </label>
+            </div>
+
+            <label class="form-field">
+              <span class="field-label">Confirm New Password</span>
+              <input class="text-input" type="password" name="confirm_password" value="" minlength="8" />
+            </label>
+
+            <div class="settings-actions">
+              <button class="btn btn-primary btn-inline-wide" type="submit">Save Profile</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="settings-panel">
+          <div class="settings-section-header">
+            <div>
+              <h3>Weekly Availability</h3>
+              <p>This uses the same data as the Availability page, so anything you save here shows up there immediately.</p>
+            </div>
+            <a class="btn btn-soft btn-inline" href="{{ url_for('web_availability') }}">Open full availability page</a>
+          </div>
+
+          {% include "_availability_manager.html" %}
+        </section>
+
+        <section class="settings-panel">
+          <div class="settings-section-header">
+            <div>
+              <h3>Notification Preferences</h3>
+              <p>Choose where alerts appear and when we should stay quiet.</p>
+            </div>
+          </div>
+
+          <form method="POST" action="{{ url_for('web_settings_notifications') }}" class="settings-form-stack">
+            <div class="settings-stack">
+              <section class="settings-subpanel">
+                <p class="settings-subpanel-title">Delivery Channels</p>
+
+                <label class="settings-toggle-row">
+                  <span>Email notifications</span>
+                  <input type="checkbox" name="email_enabled" {% if notification_form['email'] %}checked{% endif %} />
+                </label>
+
+                <label class="settings-toggle-row">
+                  <span>In-app notifications</span>
+                  <input type="checkbox" name="in_app_enabled" {% if notification_form['in_app'] %}checked{% endif %} />
+                </label>
+              </section>
+
+              <section class="settings-subpanel">
+                <p class="settings-subpanel-title">What To Notify</p>
+
+                <label class="settings-toggle-row">
+                  <span>Meeting reminders</span>
+                  <input type="checkbox" name="meeting_reminders_enabled" {% if notification_form['meeting_reminders'] %}checked{% endif %} />
+                </label>
+
+                <label class="settings-toggle-row">
+                  <span>Group activity updates</span>
+                  <input type="checkbox" name="group_activity_enabled" {% if notification_form['group_activity'] %}checked{% endif %} />
+                </label>
+
+                <div class="settings-inline-grid">
+                  <label class="settings-toggle-row">
+                    <span>Digest emails</span>
+                    <input type="checkbox" name="weekly_digest_enabled" {% if notification_form['weekly_digest'] %}checked{% endif %} />
+                  </label>
+
+                  <label class="form-field">
+                    <span class="field-label">Frequency</span>
+                    <select class="text-input" name="digest_frequency">
+                      <option value="daily" {% if notification_form['digest_frequency'] == 'daily' %}selected{% endif %}>Daily</option>
+                      <option value="weekly" {% if notification_form['digest_frequency'] == 'weekly' %}selected{% endif %}>Weekly</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
+
+              <section class="settings-subpanel">
+                <p class="settings-subpanel-title">Quiet Hours</p>
+
+                <label class="settings-toggle-row">
+                  <span>Pause non-urgent notifications</span>
+                  <input type="checkbox" name="quiet_hours_enabled" {% if notification_form['quiet_hours_enabled'] %}checked{% endif %} />
+                </label>
+
+                <div class="settings-form-grid">
+                  <label class="form-field">
+                    <span class="field-label">Start</span>
+                    <select class="text-input" name="quiet_hours_start">
+                      {% for option in quiet_hours_options %}
+                        <option value="{{ option }}" {% if notification_form['quiet_hours_start'] == option %}selected{% endif %}>{{ option }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+
+                  <label class="form-field">
+                    <span class="field-label">End</span>
+                    <select class="text-input" name="quiet_hours_end">
+                      {% for option in quiet_hours_options %}
+                        <option value="{{ option }}" {% if notification_form['quiet_hours_end'] == option %}selected{% endif %}>{{ option }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                </div>
+              </section>
+            </div>
+
+            <div class="settings-actions">
+              <button class="btn btn-primary btn-inline-wide" type="submit">Save Preferences</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

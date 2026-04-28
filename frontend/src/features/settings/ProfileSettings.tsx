@@ -1,5 +1,6 @@
 import AvailabilitySettings from "./AvailabilitySettings";
 import NotificationPreferences from "./NotificationPreferences";
+import ProfileCard from "./ProfileCard";
 
 export default function ProfileSettings() {
   return (
@@ -9,6 +10,7 @@ export default function ProfileSettings() {
         <p className="text-slate-500 dark:text-slate-400 mt-2">Manage your account preferences and working hours.</p>
       </div>
 
+      <ProfileCard />
       <AvailabilitySettings />
       <NotificationPreferences />
     </div>

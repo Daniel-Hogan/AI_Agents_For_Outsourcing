@@ -1,16 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-interface NotificationPreferencesState {
-  email: boolean;
-  inApp: boolean;
-  meetingReminders: boolean;
-  groupActivity: boolean;
-  weeklyDigest: boolean;
-  digestFrequency: "daily" | "weekly";
-  quietHoursEnabled: boolean;
-  quietHoursStart: string;
-  quietHoursEnd: string;
-}
+import {
+  fetchNotificationPreferences,
+  saveNotificationPreferences,
+  type NotificationPreferencesState,
+} from "../../services/notificationsApi";
 
 const DEFAULT_PREFERENCES: NotificationPreferencesState = {
   email: true,
@@ -24,23 +18,6 @@ const DEFAULT_PREFERENCES: NotificationPreferencesState = {
   quietHoursEnd: "07:00",
 };
 
-const STORAGE_KEY = "notification_preferences";
-
-function loadPreferences(): NotificationPreferencesState {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return DEFAULT_PREFERENCES;
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<NotificationPreferencesState>;
-    return {
-      ...DEFAULT_PREFERENCES,
-      ...parsed,
-    };
-  } catch {
-    return DEFAULT_PREFERENCES;
-  }
-}
-
 const TIME_OPTIONS = Array.from({ length: 24 * 2 }, (_, index) => {
   const hours = Math.floor(index / 2)
     .toString()
@@ -50,9 +27,36 @@ const TIME_OPTIONS = Array.from({ length: 24 * 2 }, (_, index) => {
 });
 
 export default function NotificationPreferences() {
-  const [prefs, setPrefs] = useState<NotificationPreferencesState>(loadPreferences);
+  const [prefs, setPrefs] = useState<NotificationPreferencesState>(DEFAULT_PREFERENCES);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function load() {
+      try {
+        const data = await fetchNotificationPreferences();
+        if (isMounted) {
+          setPrefs(data);
+        }
+      } catch {
+        if (isMounted) {
+          setSaveMessage("Using default notification preferences.");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    load();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const channelsSummary = useMemo(() => {
     const channels = [];
@@ -72,14 +76,15 @@ export default function NotificationPreferences() {
 
   async function handleSave() {
     setIsSaving(true);
-
-    // Keep local persistence until a backend endpoint is available.
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-
-    await new Promise((resolve) => setTimeout(resolve, 250));
-
-    setSaveMessage("Notification preferences saved.");
-    setIsSaving(false);
+    try {
+      const saved = await saveNotificationPreferences(prefs);
+      setPrefs(saved);
+      setSaveMessage("Notification preferences saved.");
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "Failed to save notification preferences.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -90,6 +95,8 @@ export default function NotificationPreferences() {
           Choose where alerts appear and when we should stay quiet.
         </p>
       </div>
+
+      {isLoading ? <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Loading notification preferences...</p> : null}
 
       <div className="space-y-6">
         <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-4">

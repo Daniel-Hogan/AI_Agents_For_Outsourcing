@@ -16,12 +16,14 @@ from app.api.availability import router as availability_router
 from app.api.calendar import router as calendar_router
 from app.api.deps import get_current_user, get_db
 from app.api.meetings import router as meetings_router
+from app.api.notifications import router as notifications_router
 from app.api.recommendations import router as recommendations_router
 from app.core.config import settings
 from app.core.logging import configure_logging
 from app.db.bootstrap import ensure_runtime_schema
 from app.models import User
 from app.schemas.groups import CreateGroupRequest, GroupResponse, JoinGroupRequest
+from app.services.notifications import start_notification_scheduler, stop_notification_scheduler
 from app.web.routes import router as web_router
 
 
@@ -36,6 +38,8 @@ def _allowed_origins() -> list[str]:
     origins = {
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
     }
     if settings.frontend_origin:
         origins.add(settings.frontend_origin)
@@ -48,6 +52,14 @@ def create_app() -> FastAPI:
     @api.on_event("startup")
     def bootstrap_runtime_schema() -> None:
         ensure_runtime_schema()
+
+    @api.on_event("startup")
+    async def startup_notification_scheduler() -> None:
+        start_notification_scheduler(api)
+
+    @api.on_event("shutdown")
+    async def shutdown_notification_scheduler() -> None:
+        await stop_notification_scheduler(api)
 
     @api.middleware("http")
     async def request_logging(request: Request, call_next):
@@ -108,6 +120,7 @@ def create_app() -> FastAPI:
     api.include_router(availability_router)
     api.include_router(calendar_router)
     api.include_router(meetings_router)
+    api.include_router(notifications_router)
     return api
 
 

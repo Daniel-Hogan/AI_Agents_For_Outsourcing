@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Groups</title>
+  {% include "_theme_head.html" %}
+</head>
+<body class="groups-page">
+  {% include "_app_header.html" %}
+
+  <main class="page app-page">
+    {% if messages %}
+      <div class="toasts" aria-live="polite" aria-atomic="true">
+        {% for item in messages %}
+          <div class="toast toast-{{ item['category'] }}">{{ item["message"] }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <section class="card groups-card shell-card-wide">
+      <div class="settings-page-header">
+        <div>
+          <p class="section-kicker">Your Teams</p>
+          <h2 class="page-title page-title-tight">Groups</h2>
+          <p class="page-subtle-copy">
+            Create a group, join one with a token, and keep track of the teams you already belong to.
+          </p>
+        </div>
+      </div>
+
+      <div class="groups-layout">
+        <section class="settings-panel">
+          <div class="settings-section-header">
+            <div>
+              <h3>Create Group</h3>
+              <p>Start a new group for your class project, club, or team.</p>
+            </div>
+          </div>
+
+          <form method="POST" action="{{ url_for('web_groups_create') }}" class="settings-form-stack">
+            <label class="form-field">
+              <span class="field-label">Group Name</span>
+              <input class="text-input" type="text" name="name" value="{{ group_create_form['name'] }}" placeholder="Senior Design Team" required />
+            </label>
+
+            <label class="form-field">
+              <span class="field-label">Description</span>
+              <textarea class="text-area" name="description" rows="3" placeholder="Weekly planning, demos, and check-ins.">{{ group_create_form['description'] }}</textarea>
+            </label>
+
+            <div class="settings-actions">
+              <button class="btn btn-primary btn-inline-wide" type="submit">Create Group</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="settings-panel">
+          <div class="settings-section-header">
+            <div>
+              <h3>Join Group</h3>
+              <p>Use the 9-digit token from an existing group to join it.</p>
+            </div>
+          </div>
+
+          <form method="POST" action="{{ url_for('web_groups_join') }}" class="settings-form-stack">
+            <label class="form-field">
+              <span class="field-label">Group Token</span>
+              <input class="text-input groups-token-input" type="text" inputmode="numeric" maxlength="9" name="token" value="{{ group_join_form['token'] }}" placeholder="000000123" required />
+            </label>
+
+            <div class="settings-actions">
+              <button class="btn btn-primary btn-inline-wide" type="submit">Join Group</button>
+            </div>
+          </form>
+        </section>
+      </div>
+
+      <section class="settings-panel groups-list-panel">
+        <div class="settings-section-header">
+          <div>
+            <h3>Your Groups</h3>
+            <p>{{ groups|length }} group{% if groups|length != 1 %}s{% endif %} currently linked to your account.</p>
+          </div>
+        </div>
+
+        {% if groups %}
+          <div class="groups-grid">
+            {% for group in groups %}
+              <article class="group-card">
+                <div class="group-card-header">
+                  <div>
+                    <h4>{{ group['name'] }}</h4>
+                    <p>{{ group['description'] or 'No description provided yet.' }}</p>
+                  </div>
+                  <span class="group-role-pill">{{ group['role_label'] }}</span>
+                </div>
+
+                <div class="group-card-meta">
+                  <span>{{ group['member_count'] }} member{% if group['member_count'] != 1 %}s{% endif %}</span>
+                  {% if group['can_manage'] %}
+                    <span>Management enabled</span>
+                  {% endif %}
+                </div>
+
+                <div class="group-token-block">
+                  <span class="field-label">Join Token</span>
+                  <code>{{ group['token'] }}</code>
+                </div>
+
+                <a class="btn btn-soft btn-inline-wide group-workspace-link" href="{{ url_for('web_group_detail', group_id=group['id']) }}">
+                  {% if group['can_manage'] %}Open workspace{% else %}View workspace{% endif %}
+                </a>
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="availability-empty-state groups-empty-state">
+            <p class="section-kicker">Nothing Yet</p>
+            <h3>You are not in any groups yet</h3>
+            <p>Create one above or join a team with a 9-digit token.</p>
+          </div>
+        {% endif %}
+      </section>
+    </section>
+  </main>
+</body>
+</html>

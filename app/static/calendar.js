@@ -19,6 +19,16 @@ function initCalendarModal() {
   const warningBadgeNode = modal.querySelector("[data-calendar-modal-warning-badge]");
   const warningMessageNode = modal.querySelector("[data-calendar-modal-warning-message]");
   const detailLink = modal.querySelector("[data-calendar-modal-link]");
+  const editToggleButton = modal.querySelector("[data-calendar-edit-toggle]");
+  const editForm = modal.querySelector("[data-calendar-edit-form]");
+  const editCancelButton = modal.querySelector("[data-calendar-edit-cancel]");
+  const editMeetingIdInput = modal.querySelector("[data-calendar-edit-meeting-id]");
+  const editTitleInput = modal.querySelector("[data-calendar-edit-title]");
+  const editDescriptionInput = modal.querySelector("[data-calendar-edit-description]");
+  const editLocationInput = modal.querySelector("[data-calendar-edit-location]");
+  const editTypeInput = modal.querySelector("[data-calendar-edit-type]");
+  const editStartInput = modal.querySelector("[data-calendar-edit-start]");
+  const editEndInput = modal.querySelector("[data-calendar-edit-end]");
 
   if (
     !titleNode ||
@@ -31,7 +41,17 @@ function initCalendarModal() {
     !warningNode ||
     !warningBadgeNode ||
     !warningMessageNode ||
-    !detailLink
+    !detailLink ||
+    !editToggleButton ||
+    !editForm ||
+    !editCancelButton ||
+    !editMeetingIdInput ||
+    !editTitleInput ||
+    !editDescriptionInput ||
+    !editLocationInput ||
+    !editTypeInput ||
+    !editStartInput ||
+    !editEndInput
   ) {
     return;
   }
@@ -42,6 +62,21 @@ function initCalendarModal() {
   function closeModal() {
     modal.hidden = true;
     document.body.classList.remove("calendar-modal-open");
+    closeEditForm();
+  }
+
+  function closeEditForm() {
+    editForm.hidden = true;
+    editToggleButton.textContent = "Edit meeting";
+  }
+
+  function openEditForm() {
+    editForm.hidden = false;
+    editToggleButton.textContent = "Hide editor";
+    window.requestAnimationFrame(() => {
+      editForm.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      editTitleInput.focus({ preventScroll: true });
+    });
   }
 
   function openModal(button) {
@@ -66,6 +101,18 @@ function initCalendarModal() {
     }
     warningMessageNode.textContent = warningMessage;
 
+    editMeetingIdInput.value = button.dataset.meetingId || "";
+    editTitleInput.value = button.dataset.title || "";
+    editDescriptionInput.value = button.dataset.description || "";
+    editLocationInput.value = button.dataset.location === "No location provided" ? "" : (button.dataset.location || "");
+    editTypeInput.value = button.dataset.meetingType || "in_person";
+    editStartInput.value = button.dataset.startValue || "";
+    editEndInput.value = button.dataset.endValue || "";
+
+    const canEdit = button.dataset.canEdit === "true";
+    editToggleButton.hidden = !canEdit;
+    closeEditForm();
+
     modal.hidden = false;
     document.body.classList.add("calendar-modal-open");
   }
@@ -77,6 +124,17 @@ function initCalendarModal() {
   for (const button of closeButtons) {
     button.addEventListener("click", closeModal);
   }
+
+  editToggleButton.addEventListener("click", () => {
+    if (editForm.hidden) {
+      openEditForm();
+      return;
+    }
+
+    closeEditForm();
+  });
+
+  editCancelButton.addEventListener("click", closeEditForm);
 
   closeModal();
 

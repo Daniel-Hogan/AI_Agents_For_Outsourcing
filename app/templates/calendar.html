@@ -7,7 +7,9 @@
   {% include "_theme_head.html" %}
 </head>
 <body class="calendar-page">
-  <main class="calendar-shell">
+  {% include "_app_header.html" %}
+
+  <main class="calendar-shell app-page-shell">
     {% if messages %}
       <div class="toasts" aria-live="polite" aria-atomic="true">
         {% for item in messages %}
@@ -25,17 +27,6 @@
             Signed in as <strong>{{ email }}</strong>. {{ calendar_view['meeting_count_label'] }} scheduled this month.
           </p>
         </div>
-
-        <div class="calendar-topbar-actions">
-          {% set minimal = false %}
-          {% include "_theme_toggle.html" %}
-          <a class="btn btn-soft btn-inline" href="{{ url_for('web_dashboard') }}">Dashboard</a>
-          <a class="btn btn-soft btn-inline" href="{{ url_for('web_meetings') }}">Agenda</a>
-          <a class="btn btn-soft btn-inline" href="{{ url_for('web_availability') }}">Availability</a>
-          <form method="POST" action="{{ url_for('web_logout') }}">
-            <button class="btn btn-primary btn-inline" type="submit">Log out</button>
-          </form>
-        </div>
       </div>
 
       <div class="calendar-layout">
@@ -48,9 +39,9 @@
             </div>
 
             <div class="calendar-month-nav">
-              <a class="btn btn-soft btn-inline" href="{{ url_for('web_calendar') }}?{{ calendar_view['prev_query'] }}">Previous</a>
-              <a class="btn btn-soft btn-inline" href="{{ url_for('web_calendar') }}?{{ calendar_view['today_query'] }}">Today</a>
-              <a class="btn btn-soft btn-inline" href="{{ url_for('web_calendar') }}?{{ calendar_view['next_query'] }}">Next</a>
+              <a class="btn btn-soft btn-inline calendar-month-nav-button" href="{{ url_for('web_calendar') }}?{{ calendar_view['prev_query'] }}">Previous month</a>
+              <a class="btn btn-soft btn-inline calendar-month-nav-button calendar-month-nav-button-current" href="{{ url_for('web_calendar') }}?{{ calendar_view['today_query'] }}">This month</a>
+              <a class="btn btn-soft btn-inline calendar-month-nav-button" href="{{ url_for('web_calendar') }}?{{ calendar_view['next_query'] }}">Next month</a>
             </div>
           </div>
 
@@ -89,10 +80,16 @@
                         type="button"
                         class="calendar-event calendar-event-{{ meeting['color_token'] }}"
                         data-calendar-open
+                        data-meeting-id="{{ meeting['id'] }}"
                         data-title="{{ meeting['title']|e }}"
+                        data-description="{{ (meeting['description'] or '')|e }}"
                         data-date-label="{{ meeting['date_label']|e }}"
                         data-time-range="{{ meeting['time_range_label']|e }}"
+                        data-start-value="{{ meeting['start_input_value']|e }}"
+                        data-end-value="{{ meeting['end_input_value']|e }}"
                         data-location="{{ meeting['location_label']|e }}"
+                        data-meeting-type="{{ meeting['meeting_type']|e }}"
+                        data-can-edit="{{ 'true' if meeting['is_organizer'] else 'false' }}"
                         data-organizer="{{ meeting['organizer_email']|e }}"
                         data-status="{{ meeting['status_label']|e }}"
                         data-travel="{{ meeting['travel_summary']|e }}"
@@ -137,10 +134,16 @@
                         type="button"
                         class="calendar-list-card calendar-list-card-{{ meeting['color_token'] }}"
                         data-calendar-open
+                        data-meeting-id="{{ meeting['id'] }}"
                         data-title="{{ meeting['title']|e }}"
+                        data-description="{{ (meeting['description'] or '')|e }}"
                         data-date-label="{{ meeting['date_label']|e }}"
                         data-time-range="{{ meeting['time_range_label']|e }}"
+                        data-start-value="{{ meeting['start_input_value']|e }}"
+                        data-end-value="{{ meeting['end_input_value']|e }}"
                         data-location="{{ meeting['location_label']|e }}"
+                        data-meeting-type="{{ meeting['meeting_type']|e }}"
+                        data-can-edit="{{ 'true' if meeting['is_organizer'] else 'false' }}"
                         data-organizer="{{ meeting['organizer_email']|e }}"
                         data-status="{{ meeting['status_label']|e }}"
                         data-travel="{{ meeting['travel_summary']|e }}"
@@ -195,8 +198,67 @@
       </div>
 
       <div class="calendar-modal-actions">
+        <button type="button" class="btn btn-soft btn-inline" data-calendar-edit-toggle hidden>Edit meeting</button>
         <a class="btn btn-primary btn-inline-wide" data-calendar-modal-link href="#">Open details</a>
       </div>
+
+      <form method="POST" action="{{ url_for('web_calendar_meeting_update') }}" class="calendar-modal-edit-form" data-calendar-edit-form hidden>
+        <input type="hidden" name="meeting_id" data-calendar-edit-meeting-id />
+        <input type="hidden" name="month" value="{{ calendar_view['selected_month'] }}" />
+
+        <div class="calendar-modal-edit-header">
+          <div>
+            <p class="calendar-kicker">Edit Meeting</p>
+            <h3>Update the meeting details</h3>
+          </div>
+          <button type="button" class="btn btn-soft btn-inline" data-calendar-edit-cancel>Close editor</button>
+        </div>
+
+        <p class="calendar-modal-edit-note">
+          Saving changes will set non-organizer attendees back to <strong>invited</strong> so they can reconfirm the updated plan.
+        </p>
+
+        <div class="calendar-modal-edit-grid">
+          <label class="form-field calendar-modal-edit-field">
+            <span class="field-label">Title</span>
+            <input class="text-input" type="text" name="title" data-calendar-edit-title required />
+          </label>
+
+          <label class="form-field calendar-modal-edit-field">
+            <span class="field-label">Meeting Type</span>
+            <select class="text-input" name="meeting_type" data-calendar-edit-type>
+              <option value="in_person">In person</option>
+              <option value="virtual">Virtual</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="form-field calendar-modal-edit-field">
+          <span class="field-label">Description</span>
+          <textarea class="text-area" name="description" rows="3" data-calendar-edit-description></textarea>
+        </label>
+
+        <label class="form-field calendar-modal-edit-field">
+          <span class="field-label">Location</span>
+          <input class="text-input" type="text" name="location" data-calendar-edit-location placeholder="No location provided" />
+        </label>
+
+        <div class="calendar-modal-edit-grid">
+          <label class="form-field calendar-modal-edit-field">
+            <span class="field-label">Start</span>
+            <input class="text-input" type="datetime-local" name="start_time" step="900" data-calendar-edit-start required />
+          </label>
+
+          <label class="form-field calendar-modal-edit-field">
+            <span class="field-label">End</span>
+            <input class="text-input" type="datetime-local" name="end_time" step="900" data-calendar-edit-end required />
+          </label>
+        </div>
+
+        <div class="calendar-modal-edit-actions">
+          <button type="submit" class="btn btn-primary btn-inline-wide">Save changes</button>
+        </div>
+      </form>
     </div>
   </div>
 

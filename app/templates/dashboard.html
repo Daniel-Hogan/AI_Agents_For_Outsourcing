@@ -7,7 +7,9 @@
   {% include "_theme_head.html" %}
 </head>
 <body class="dashboard-page">
-  <main class="page">
+  {% include "_app_header.html" %}
+
+  <main class="page app-page">
     {% if messages %}
       <div class="toasts" aria-live="polite" aria-atomic="true">
         {% for item in messages %}
@@ -24,20 +26,11 @@
             You are signed in as <strong>{{ email }}</strong>.
           </p>
         </div>
-
-        {% set minimal = false %}
-        {% include "_theme_toggle.html" %}
       </div>
 
-      <div class="dashboard-actions">
-        <a class="btn btn-soft btn-inline" href="{{ url_for('web_meetings') }}">Meetings</a>
-        <a class="btn btn-soft btn-inline" href="{{ url_for('web_calendar') }}">Calendar</a>
-        <a class="btn btn-soft btn-inline" href="{{ url_for('web_availability') }}">Availability</a>
-      </div>
-
-      <form method="POST" action="{{ url_for('web_logout') }}">
-        <button class="btn btn-primary btn-inline-wide" type="submit">Log out</button>
-      </form>
+      <p class="page-subtle-copy dashboard-copy-block">
+        Use the header to move between meetings, calendar, availability, groups, and settings without each page carrying its own stack of buttons.
+      </p>
     </section>
   </main>
 </body>

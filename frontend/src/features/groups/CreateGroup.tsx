@@ -12,8 +12,7 @@ export default function CreateGroup() {
 	const [mode, setMode] = useState<Mode>("create");
 	const [groupName, setGroupName] = useState("");
 	const [description, setDescription] = useState("");
-	const [inviteCode, setInviteCode] = useState("");
-	const [groupId, setGroupId] = useState("");
+	const [groupToken, setGroupToken] = useState("");
 
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState("");
@@ -55,22 +54,26 @@ export default function CreateGroup() {
 		setError("");
 		setSuccess("");
 
-		const parsedGroupId = groupId.trim() ? Number(groupId) : undefined;
+		const token = groupToken.trim();
 
-		if (!inviteCode.trim() && !parsedGroupId) {
-			setError("Enter an invite code or a group ID.");
+		if (!token) {
+			setError("Enter a 9-digit group token.");
+			setIsSubmitting(false);
+			return;
+		}
+
+		if (!/^\d{9}$/.test(token)) {
+			setError("Group token must be exactly 9 digits.");
 			setIsSubmitting(false);
 			return;
 		}
 
 		try {
 			await joinGroup({
-				inviteCode: inviteCode.trim() || undefined,
-				groupId: Number.isFinite(parsedGroupId) ? parsedGroupId : undefined,
+				inviteCode: token,
 			});
 			setSuccess("You joined the group. Redirecting...");
-			setInviteCode("");
-			setGroupId("");
+			setGroupToken("");
 			window.setTimeout(() => navigate("/groups"), 700);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Could not join group");
@@ -160,32 +163,21 @@ export default function CreateGroup() {
 					<form className="space-y-4" onSubmit={handleJoinSubmit}>
 						<div>
 							<label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
-								Invite Code
+								Group Token
 							</label>
 							<input
-								value={inviteCode}
-								onChange={(e) => setInviteCode(e.target.value)}
-								className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-white"
-								placeholder="ABC123"
+								type="text"
+								inputMode="numeric"
+								maxLength={9}
+								pattern="\\d{9}"
+								value={groupToken}
+								onChange={(e) => setGroupToken(e.target.value.replace(/\D/g, "").slice(0, 9))}
+								className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-white tracking-[0.3em] font-mono"
+								placeholder="123456789"
 							/>
-						</div>
-
-						<div className="text-xs font-semibold tracking-wide uppercase text-slate-500 dark:text-slate-400">
-							or
-						</div>
-
-						<div>
-							<label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
-								Group ID
-							</label>
-							<input
-								type="number"
-								min={1}
-								value={groupId}
-								onChange={(e) => setGroupId(e.target.value)}
-								className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-white"
-								placeholder="12"
-							/>
+							<p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+								Enter the 9-digit token shown in the group card menu.
+							</p>
 						</div>
 
 						<button

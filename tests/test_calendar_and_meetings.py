@@ -128,6 +128,53 @@ def test_meeting_lifecycle_and_rsvp(client):
     assert len(visible_cancelled_response.json()) == 1
 
 
+def test_meeting_update_resets_attendee_rsvp_status(client):
+    organizer_token = register_user(client, first_name="Ada", last_name="Lovelace", email="ada@example.com")
+    attendee_token = register_user(client, first_name="Grace", last_name="Hopper", email="grace@example.com")
+
+    create_response = client.post(
+        "/api/meetings/",
+        headers=auth_headers(organizer_token),
+        json={
+            "title": "Sprint Planning",
+            "description": "Plan the next iteration",
+            "location": "Lab A",
+            "start_time": "2026-04-01T15:00:00Z",
+            "end_time": "2026-04-01T16:00:00Z",
+            "attendee_emails": ["grace@example.com"],
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+    meeting_id = create_response.json()["id"]
+
+    rsvp_response = client.post(
+        f"/api/meetings/{meeting_id}/rsvp",
+        headers=auth_headers(attendee_token),
+        json={"status": "accepted"},
+    )
+    assert rsvp_response.status_code == 200, rsvp_response.text
+    assert rsvp_response.json()["accepted_count"] == 2
+
+    update_response = client.put(
+        f"/api/meetings/{meeting_id}",
+        headers=auth_headers(organizer_token),
+        json={
+            "location": "Lab B",
+            "start_time": "2026-04-01T17:00:00Z",
+            "end_time": "2026-04-01T18:00:00Z",
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
+    payload = update_response.json()
+    assert payload["location"] == "Lab B"
+    assert payload["accepted_count"] == 1
+    assert payload["invited_count"] == 1
+
+    attendee_view = client.get(f"/api/meetings/{meeting_id}", headers=auth_headers(attendee_token))
+    assert attendee_view.status_code == 200, attendee_view.text
+    assert attendee_view.json()["current_user_status"] == "invited"
+
+
 def test_meeting_recommendations_full_match_only(client):
     organizer_token = register_user(client, first_name="Ada", last_name="Lovelace", email="ada@example.com")
     attendee_token = register_user(client, first_name="Grace", last_name="Hopper", email="grace@example.com")

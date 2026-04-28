@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Meetings Overview</title>
+  {% include "_theme_head.html" %}
+</head>
+<body class="meetings-page meetings-overview-page">
+  {% include "_app_header.html" %}
+
+  <main class="page app-page">
+    {% if messages %}
+      <div class="toasts" aria-live="polite" aria-atomic="true">
+        {% for item in messages %}
+          <div class="toast toast-{{ item['category'] }}">{{ item["message"] }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <section class="card meetings-card shell-card-wide">
+      <div class="meetings-header meetings-overview-header">
+        <div class="meetings-header-copy">
+          <p class="section-kicker">Stay Aligned</p>
+          <h2 class="page-title page-title-tight">Meetings Overview</h2>
+          <p class="page-subtle-copy">
+            {{ overview_meeting_count }} upcoming meeting{% if overview_meeting_count != 1 %}s{% endif %}
+            {% if overview_scope == "group" %}
+              across your schedule and the groups you own
+            {% else %}
+              across your personal schedule
+            {% endif %}.
+          </p>
+        </div>
+
+        <div class="meetings-overview-controls">
+          {% if has_owned_groups %}
+            <nav class="overview-scope-toggle" aria-label="Overview scope">
+              <a class="overview-scope-link{% if overview_scope == 'mine' %} is-active{% endif %}" href="{{ url_for('web_meetings_overview') }}">Just me</a>
+              <a class="overview-scope-link{% if overview_scope == 'group' %} is-active{% endif %}" href="{{ url_for('web_meetings_overview') }}?scope=group">Me + owned groups</a>
+            </nav>
+          {% endif %}
+
+          <a class="btn btn-soft btn-inline" href="{{ url_for('web_meetings') }}">Open scheduler</a>
+        </div>
+      </div>
+
+      <hr class="section-divider" />
+
+      {% if overview_meetings %}
+        <div class="meetings-overview-grid">
+          {% for meeting in overview_meetings %}
+            <details class="overview-meeting-card">
+              <summary class="overview-meeting-summary">
+                <div class="overview-meeting-summary-main">
+                  <div class="overview-meeting-title-row">
+                    <h3>{{ meeting['title'] }}</h3>
+                    {% if meeting['meeting_type'] == 'virtual' %}
+                      <span class="overview-type-pill overview-type-pill-virtual">Remote</span>
+                    {% else %}
+                      <span class="overview-type-pill">In person</span>
+                    {% endif %}
+                  </div>
+
+                  <p class="overview-meeting-window">{{ meeting['day_label'] }} &middot; {{ meeting['time_range_label'] }}</p>
+                  <p class="overview-meeting-location">{{ meeting['location_label'] }}</p>
+                </div>
+
+                <div class="overview-meeting-summary-side">
+                  <div class="overview-meeting-stat-line">
+                    <span>{{ meeting['attendee_count'] }} attendee{% if meeting['attendee_count'] != 1 %}s{% endif %}</span>
+                    <span>{{ meeting['accepted_count'] }} accepted</span>
+                    {% if meeting['maybe_count'] %}
+                      <span>{{ meeting['maybe_count'] }} maybe</span>
+                    {% endif %}
+                  </div>
+
+                  {% if meeting['can_manage'] %}
+                    <span class="overview-role-pill">Can manage</span>
+                  {% elif meeting['is_participant'] %}
+                    <span class="overview-role-pill overview-role-pill-muted">Participant</span>
+                  {% endif %}
+
+                  <span class="overview-summary-cue">Open</span>
+                </div>
+              </summary>
+
+              <div class="overview-meeting-body">
+                {% if meeting['description'] %}
+                  <p class="overview-meeting-description">{{ meeting['description'] }}</p>
+                {% endif %}
+
+                <div class="overview-meta-grid">
+                  <div class="overview-meta-card">
+                    <span class="field-label">Organizer</span>
+                    <strong>{{ meeting['organizer_label'] }}</strong>
+                    <small>{{ meeting['organizer_email'] }}</small>
+                  </div>
+
+                  <div class="overview-meta-card">
+                    <span class="field-label">Status mix</span>
+                    <strong>{{ meeting['accepted_count'] }} accepted</strong>
+                    <small>{{ meeting['invited_count'] }} invited &middot; {{ meeting['declined_count'] }} declined{% if meeting['maybe_count'] %} &middot; {{ meeting['maybe_count'] }} maybe{% endif %}</small>
+                  </div>
+                </div>
+
+                {% if meeting['is_group_visible_only'] %}
+                  <p class="inline-note">Visible here because someone from one of your owned groups is on this meeting.</p>
+                {% endif %}
+
+                <section class="overview-attendees-panel">
+                  <div class="panel-header">
+                    <div>
+                      <p class="section-kicker">Availability</p>
+                      <h4 class="panel-title">Participant status bars</h4>
+                    </div>
+                    <p class="panel-copy">Each bar maps to one participant so you can spot accepted, invited, declined, and maybe responses quickly.</p>
+                  </div>
+
+                  <div class="overview-availability-strip" aria-label="Participant status bars">
+                    {% for attendee in meeting['attendees'] %}
+                      <span
+                        class="overview-availability-bar overview-availability-{{ attendee['status'] }}"
+                        title="{{ attendee['display_name'] }} — {{ attendee['status_label'] }}"
+                      ></span>
+                    {% endfor %}
+                  </div>
+
+                  <div class="overview-attendee-list">
+                    {% for attendee in meeting['attendees'] %}
+                      <div class="overview-attendee-row">
+                        <div class="overview-attendee-copy">
+                          <span class="overview-attendee-avatar" aria-hidden="true">{{ attendee['initials'] }}</span>
+                          <div>
+                            <strong>{{ attendee['display_name'] }}</strong>
+                            <small>{{ attendee['email'] }}</small>
+                          </div>
+                        </div>
+
+                        <div class="overview-attendee-status">
+                          {% if attendee['user_id'] == meeting['created_by'] %}
+                            <span class="group-role-pill">Organizer</span>
+                          {% endif %}
+                          <span class="overview-status-pill overview-status-{{ attendee['status'] }}">{{ attendee['status_label'] }}</span>
+                        </div>
+                      </div>
+                    {% endfor %}
+                  </div>
+                </section>
+
+                <div class="overview-actions">
+                  {% if meeting['can_manage'] %}
+                    <details class="overview-action-panel">
+                      <summary class="btn btn-soft btn-inline">Reschedule</summary>
+                      <form method="POST" action="{{ url_for('web_meetings_overview_reschedule') }}" class="overview-inline-form">
+                        <input type="hidden" name="meeting_id" value="{{ meeting['id'] }}" />
+                        <input type="hidden" name="scope" value="{{ overview_scope }}" />
+
+                        <label class="form-field">
+                          <span class="field-label">Start</span>
+                          <input class="text-input" type="datetime-local" name="start_time" value="{{ meeting['start_input_value'] }}" required />
+                        </label>
+
+                        <label class="form-field">
+                          <span class="field-label">End</span>
+                          <input class="text-input" type="datetime-local" name="end_time" value="{{ meeting['end_input_value'] }}" required />
+                        </label>
+
+                        <div class="settings-actions">
+                          <button class="btn btn-primary btn-inline-wide" type="submit">Save new time</button>
+                        </div>
+                      </form>
+                    </details>
+
+                    <form method="POST" action="{{ url_for('web_meetings_overview_cancel') }}">
+                      <input type="hidden" name="meeting_id" value="{{ meeting['id'] }}" />
+                      <input type="hidden" name="scope" value="{{ overview_scope }}" />
+                      <button class="btn btn-soft btn-inline overview-cancel-button" type="submit">Cancel meeting</button>
+                    </form>
+                  {% endif %}
+
+                  {% if meeting['can_add_people'] %}
+                    <details class="overview-action-panel">
+                      <summary class="btn btn-soft btn-inline overview-add-people-button">+ Add people</summary>
+                      <form method="POST" action="{{ url_for('web_meetings_overview_invitees') }}" class="overview-inline-form">
+                        <input type="hidden" name="meeting_id" value="{{ meeting['id'] }}" />
+                        <input type="hidden" name="scope" value="{{ overview_scope }}" />
+
+                        <label class="form-field">
+                          <span class="field-label">Search and add teammates</span>
+                          <div class="invitee-picker" data-invitee-picker-root>
+                            <textarea
+                              class="text-area"
+                              name="invitees"
+                              rows="2"
+                              placeholder="Add emails with commas, semicolons, or new lines."
+                              data-invitee-input
+                              data-invitee-url="{{ url_for('web_invitee_suggestions') }}"
+                            ></textarea>
+                            <div class="invitee-suggestions" data-invitee-suggestions aria-live="polite" hidden></div>
+                          </div>
+                          <span class="field-help">The same smart search from the scheduler is available here so you can add people directly from the meeting card.</span>
+                        </label>
+
+                        <div class="settings-actions">
+                          <button class="btn btn-primary btn-inline-wide" type="submit">Invite selected people</button>
+                        </div>
+                      </form>
+                    </details>
+                  {% endif %}
+
+                  <a class="btn btn-soft btn-inline" href="{{ url_for('web_meeting_detail', meeting_id=meeting['id']) }}">Full details</a>
+                </div>
+              </div>
+            </details>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="agenda-empty meetings-overview-empty">
+          <p class="section-kicker">Nothing Upcoming</p>
+          <h4>No meetings are on the horizon yet</h4>
+          <p>Use the scheduler to create something new, or switch scopes if you expected to see group meetings here.</p>
+          <a class="btn btn-primary btn-inline" href="{{ url_for('web_meetings') }}">Go to scheduler</a>
+        </div>
+      {% endif %}
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', path='meetings.js') }}"></script>
+</body>
+</html>

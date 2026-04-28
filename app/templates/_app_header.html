@@ -1,0 +1,80 @@
+<header class="app-header">
+  <div class="app-header-inner">
+    <a class="app-header-logo" href="{{ url_for('web_dashboard') }}">
+      <span class="app-header-logo-mark" aria-hidden="true">
+        <img
+          class="app-header-logo-image"
+          src="{{ url_for('static', path='SchedulerAILogo.png') }}"
+          alt=""
+          width="100"
+          height="100"
+        />
+      </span>
+      <span class="app-header-brand-copy">
+        <strong>Scheduler AI</strong>
+        <small>Plan meetings without the clutter</small>
+      </span>
+    </a>
+
+    <nav class="app-header-nav" aria-label="Primary">
+      <a class="app-header-nav-link{% if active_page == 'dashboard' %} is-active{% endif %}" href="{{ url_for('web_dashboard') }}">Dashboard</a>
+      <a class="app-header-nav-link{% if active_page == 'meeting_scheduler' %} is-active{% endif %}" href="{{ url_for('web_meetings') }}">Scheduler</a>
+      <a class="app-header-nav-link{% if active_page == 'meetings_overview' %} is-active{% endif %}" href="{{ url_for('web_meetings_overview') }}">Meetings</a>
+      <a class="app-header-nav-link{% if active_page == 'calendar' %} is-active{% endif %}" href="{{ url_for('web_calendar') }}">Calendar</a>
+      <a class="app-header-nav-link{% if active_page == 'availability' %} is-active{% endif %}" href="{{ url_for('web_availability') }}">Availability</a>
+      <a class="app-header-nav-link{% if active_page == 'groups' %} is-active{% endif %}" href="{{ url_for('web_groups') }}">Groups</a>
+      <a class="app-header-nav-link{% if active_page == 'settings' %} is-active{% endif %}" href="{{ url_for('web_settings') }}">Settings</a>
+    </nav>
+
+    <div class="app-header-actions">
+      {% set minimal = false %}
+      {% include "_theme_toggle.html" %}
+
+      <div class="app-header-bell-wrap" data-notification-bell>
+        <button
+          type="button"
+          class="app-header-bell-button"
+          data-notification-bell-button
+          aria-label="Open recent notifications"
+          aria-expanded="false"
+          aria-haspopup="dialog"
+        >
+          <span class="app-header-bell-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M12 3.75a4.25 4.25 0 0 0-4.25 4.25v1.16c0 .87-.24 1.72-.69 2.46l-1.1 1.81a1.75 1.75 0 0 0 1.5 2.66h9.08a1.75 1.75 0 0 0 1.5-2.66l-1.1-1.81a4.72 4.72 0 0 1-.69-2.46V8A4.25 4.25 0 0 0 12 3.75Zm0 17.5a2.65 2.65 0 0 1-2.49-1.75h4.98A2.65 2.65 0 0 1 12 21.25Z" fill="currentColor"/>
+            </svg>
+          </span>
+          <span class="app-header-bell-badge" data-notification-bell-badge hidden>0</span>
+        </button>
+
+        <div class="app-header-bell-panel" data-notification-bell-panel hidden>
+          <div class="app-header-bell-panel-header">
+            <div>
+              <p class="app-header-bell-kicker">Notifications</p>
+              <h3>Recent activity</h3>
+            </div>
+            <button type="button" class="btn btn-soft btn-inline" data-notification-bell-mark-all>Mark all read</button>
+          </div>
+          <p class="app-header-bell-summary" data-notification-bell-summary>No recent notifications.</p>
+          <div class="app-header-bell-list" data-notification-bell-list></div>
+          <div class="app-header-bell-empty" data-notification-bell-empty hidden>
+            <strong>All caught up</strong>
+            <p>Invites and meeting reminders from the last 24 hours will show up here.</p>
+          </div>
+        </div>
+      </div>
+
+      <a class="app-header-user" href="{{ url_for('web_settings') }}">
+        <span class="app-header-avatar" aria-hidden="true" style="background: {{ current_user_avatar_color_hex }};">{{ current_user_initials }}</span>
+        <span class="app-header-user-copy">
+          <strong>{{ current_user_name }}</strong>
+          <small>{{ current_user_email }}</small>
+        </span>
+      </a>
+
+      <form method="POST" action="{{ url_for('web_logout') }}">
+        <button class="btn btn-primary btn-inline" type="submit">Log out</button>
+      </form>
+    </div>
+  </div>
+</header>

@@ -8,6 +8,7 @@ function escapeHtml(value) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  initMeetingTypeToggle();
   initDateTimePickers();
   initLocationAutocomplete();
   initInviteeSuggestions();
@@ -15,7 +16,11 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function initLocationAutocomplete() {
-  const root = document.querySelector("[data-location-autocomplete-root]");
+  const roots = Array.from(document.querySelectorAll("[data-location-autocomplete-root]"));
+  roots.forEach((root) => setupLocationAutocomplete(root));
+}
+
+function setupLocationAutocomplete(root) {
   if (!root) {
     return;
   }
@@ -81,6 +86,11 @@ function initLocationAutocomplete() {
   }
 
   async function fetchSuggestions(query, sequence) {
+    if (root.dataset.locationMode === "virtual") {
+      hideSuggestions();
+      return;
+    }
+
     showStatus("Searching locations...");
 
     try {
@@ -113,7 +123,7 @@ function initLocationAutocomplete() {
     window.clearTimeout(debounceTimer);
 
     const query = input.value.trim();
-    if (query.length < minimumLength) {
+    if (root.dataset.locationMode === "virtual" || query.length < minimumLength) {
       hideSuggestions();
       return;
     }
@@ -126,7 +136,7 @@ function initLocationAutocomplete() {
 
   input.addEventListener("focus", () => {
     const query = input.value.trim();
-    if (latitudeInput.value || longitudeInput.value || query.length < minimumLength) {
+    if (root.dataset.locationMode === "virtual" || latitudeInput.value || longitudeInput.value || query.length < minimumLength) {
       return;
     }
     requestSequence += 1;
@@ -156,7 +166,11 @@ function initLocationAutocomplete() {
 }
 
 function initInviteeSuggestions() {
-  const root = document.querySelector("[data-invitee-picker-root]");
+  const roots = Array.from(document.querySelectorAll("[data-invitee-picker-root]"));
+  roots.forEach((root) => setupInviteeSuggestions(root));
+}
+
+function setupInviteeSuggestions(root) {
   if (!root) {
     return;
   }
@@ -366,6 +380,62 @@ function initInviteeSuggestions() {
     }
 
     insertInvitee(button.dataset.email || "");
+  });
+}
+
+function initMeetingTypeToggle() {
+  const roots = Array.from(document.querySelectorAll("[data-meeting-type-toggle]"));
+  if (!roots.length) {
+    return;
+  }
+
+  roots.forEach((root) => {
+    const form = root.closest("form") || document;
+    const typeInputs = Array.from(root.querySelectorAll('input[name="meeting_type"]'));
+    const locationInput = form.querySelector("[data-meeting-location-input]");
+    const locationLabel = form.querySelector("[data-meeting-location-label]");
+    const locationHelp = form.querySelector("[data-meeting-location-help]");
+    const autocompleteRoot = form.querySelector("[data-location-autocomplete-root]");
+    const latitudeInput = form.querySelector("[data-location-latitude]");
+    const longitudeInput = form.querySelector("[data-location-longitude]");
+    const suggestionsPanel = form.querySelector("[data-location-suggestions]");
+
+    if (!typeInputs.length || !locationInput || !locationLabel || !locationHelp || !autocompleteRoot) {
+      return;
+    }
+
+    function updateLocationMode() {
+      const selectedType = typeInputs.find((input) => input.checked)?.value || "in_person";
+      const isVirtual = selectedType === "virtual";
+
+      autocompleteRoot.dataset.locationMode = selectedType;
+      root.dataset.meetingType = selectedType;
+
+      if (isVirtual) {
+        locationLabel.textContent = "Meeting link";
+        locationHelp.textContent = "Paste the call link or remote instructions here. Travel warnings stay off for remote meetings.";
+        locationInput.placeholder = "Paste Zoom, Teams, or remote instructions";
+        locationInput.setAttribute("autocomplete", "url");
+        if (latitudeInput) {
+          latitudeInput.value = "";
+        }
+        if (longitudeInput) {
+          longitudeInput.value = "";
+        }
+        if (suggestionsPanel) {
+          suggestionsPanel.hidden = true;
+          suggestionsPanel.innerHTML = "";
+        }
+      } else {
+        locationLabel.textContent = "Location";
+        locationHelp.textContent = "Choose a suggestion to save exact coordinates for travel checks.";
+        locationInput.placeholder = "Search for a place";
+        locationInput.setAttribute("autocomplete", "off");
+      }
+    }
+
+    typeInputs.forEach((input) => input.addEventListener("change", updateLocationMode));
+    updateLocationMode();
   });
 }
 

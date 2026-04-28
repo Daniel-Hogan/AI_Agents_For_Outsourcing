@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     google_client_id: str | None = None
     google_client_secret: str | None = None
 
+    resend_api_key: str | None = None
+    email_from_address: str | None = None
+    email_from_name: str = "AI Scheduler"
+    app_base_url: str = "http://localhost:5173"
+
     log_level: str = "INFO"
 
     openrouteservice_api_key: str | None = None

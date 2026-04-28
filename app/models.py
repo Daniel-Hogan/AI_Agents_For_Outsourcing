@@ -14,6 +14,7 @@ class User(Base):
     last_name: Mapped[str] = mapped_column(Text, nullable=False)
     email: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     phone: Mapped[str | None] = mapped_column(Text)
+    avatar_color: Mapped[str] = mapped_column(Text, nullable=False, default="blue", server_default="blue")
     default_location: Mapped[str | None] = mapped_column(Text)
     default_location_latitude: Mapped[float | None] = mapped_column(nullable=True)
     default_location_longitude: Mapped[float | None] = mapped_column(nullable=True)

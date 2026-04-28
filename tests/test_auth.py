@@ -16,6 +16,7 @@ def test_register_login_me_refresh_logout(client):
     r = client.get("/auth/me", headers={"Authorization": f"Bearer {access}"})
     assert r.status_code == 200, r.text
     assert r.json()["email"] == "ada@example.com"
+    assert r.json()["avatar_color"] == "blue"
 
     old_refresh = client.cookies.get("refresh_token")
     r = client.post("/auth/refresh")
@@ -42,6 +43,49 @@ def test_login_invalid_password(client):
 
     r = client.post("/auth/login", json={"email": "grace@example.com", "password": "wrong"})
     assert r.status_code == 401
+
+
+def test_update_profile_and_password(client):
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "email": "ada@example.com",
+            "password": "supersecret123",
+        },
+    )
+    assert register_response.status_code == 200, register_response.text
+    access = register_response.json()["access_token"]
+
+    update_response = client.patch(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {access}"},
+        json={
+            "first_name": "Augusta",
+            "last_name": "Byron",
+            "email": "augusta@example.com",
+            "avatar_color": "teal",
+            "current_password": "supersecret123",
+            "new_password": "newsupersecret123",
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
+    assert update_response.json()["first_name"] == "Augusta"
+    assert update_response.json()["email"] == "augusta@example.com"
+    assert update_response.json()["avatar_color"] == "teal"
+
+    old_login = client.post(
+        "/auth/login",
+        json={"email": "ada@example.com", "password": "supersecret123"},
+    )
+    assert old_login.status_code == 401
+
+    new_login = client.post(
+        "/auth/login",
+        json={"email": "augusta@example.com", "password": "newsupersecret123"},
+    )
+    assert new_login.status_code == 200, new_login.text
 
 
 def test_web_signup_creates_account_and_redirects_to_meetings(client):

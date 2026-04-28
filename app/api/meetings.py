@@ -7,6 +7,7 @@ from app.db.calendars import get_or_create_user_calendar
 from app.models import User
 from app.schemas.meetings import MeetingCreate, MeetingResponse, MeetingRsvpUpdate, MeetingUpdate
 from app.schemas.recommendations import RecommendationRequest, RecommendationResponse
+from app.services.notifications import notify_meeting_cancelled, notify_meeting_invite, notify_meeting_updated
 from app.services.recommendations import recommend_common_slots
 
 
@@ -73,6 +74,10 @@ def _meeting_access_clause() -> str:
     return "(m.created_by = :user_id OR EXISTS (SELECT 1 FROM meeting_attendees ma2 WHERE ma2.meeting_id = m.id AND ma2.user_id = :user_id))"
 
 
+def _organizer_access_clause() -> str:
+    return "(m.created_by = :user_id OR (c.owner_type = 'user' AND c.owner_id = :user_id))"
+
+
 def _fetch_meeting_row(meeting_id: int, user_id: int, db: Session):
     meeting = db.execute(
         text(
@@ -97,7 +102,7 @@ def _fetch_meeting_row(meeting_id: int, user_id: int, db: Session):
                 COALESCE(m.status, 'confirmed') AS status,
                 m.created_by,
                 m.created_at,
-                CASE WHEN m.created_by = :user_id THEN TRUE ELSE FALSE END AS is_organizer,
+                CASE WHEN {_organizer_access_clause()} THEN TRUE ELSE FALSE END AS is_organizer,
                 me.status AS current_user_status,
                 COUNT(ma.user_id) AS attendee_count,
                 COUNT(ma.user_id) FILTER (WHERE ma.status = 'accepted') AS accepted_count,
@@ -105,10 +110,11 @@ def _fetch_meeting_row(meeting_id: int, user_id: int, db: Session):
                 COUNT(ma.user_id) FILTER (WHERE ma.status = 'maybe') AS maybe_count,
                 COUNT(ma.user_id) FILTER (WHERE ma.status = 'invited') AS invited_count
             FROM meetings m
+            JOIN calendars c ON c.id = m.calendar_id
             LEFT JOIN meeting_attendees ma ON ma.meeting_id = m.id
             LEFT JOIN meeting_attendees me ON me.meeting_id = m.id AND me.user_id = :user_id
             WHERE m.id = :meeting_id AND {_meeting_access_clause()}
-            GROUP BY m.id, me.status
+            GROUP BY m.id, c.owner_type, c.owner_id, me.status
             """
         ),
         {"meeting_id": meeting_id, "user_id": user_id},
@@ -201,6 +207,20 @@ def _replace_attendees(meeting_id: int, organizer_id: int, attendee_user_ids: li
             )
 
 
+def _reset_non_organizer_rsvps(meeting_id: int, organizer_id: int, db: Session) -> None:
+    db.execute(
+        text(
+            """
+            UPDATE meeting_attendees
+            SET status = 'invited'
+            WHERE meeting_id = :meeting_id
+              AND user_id <> :organizer_id
+            """
+        ),
+        {"meeting_id": meeting_id, "organizer_id": organizer_id},
+    )
+
+
 def _validate_meeting_window(start_time, end_time) -> None:
     if end_time <= start_time:
         raise HTTPException(status_code=400, detail="end_time must be after start_time")
@@ -239,7 +259,7 @@ def list_meetings(
                 COALESCE(m.status, 'confirmed') AS status,
                 m.created_by,
                 m.created_at,
-                CASE WHEN m.created_by = :user_id THEN TRUE ELSE FALSE END AS is_organizer,
+                CASE WHEN {_organizer_access_clause()} THEN TRUE ELSE FALSE END AS is_organizer,
                 me.status AS current_user_status,
                 COUNT(ma.user_id) AS attendee_count,
                 COUNT(ma.user_id) FILTER (WHERE ma.status = 'accepted') AS accepted_count,
@@ -247,10 +267,11 @@ def list_meetings(
                 COUNT(ma.user_id) FILTER (WHERE ma.status = 'maybe') AS maybe_count,
                 COUNT(ma.user_id) FILTER (WHERE ma.status = 'invited') AS invited_count
             FROM meetings m
+            JOIN calendars c ON c.id = m.calendar_id
             LEFT JOIN meeting_attendees ma ON ma.meeting_id = m.id
             LEFT JOIN meeting_attendees me ON me.meeting_id = m.id AND me.user_id = :user_id
             WHERE {_meeting_access_clause()}{filters}
-            GROUP BY m.id, me.status
+            GROUP BY m.id, c.owner_type, c.owner_id, me.status
             ORDER BY m.start_time ASC, m.id ASC
             """
         ),
@@ -339,6 +360,7 @@ def create_meeting(
     meeting_id = created[0]
     _replace_attendees(meeting_id, current_user.id, attendee_user_ids, db)
     db.commit()
+    notify_meeting_invite(meeting_id, db)
     return _serialize_meeting(meeting_id, current_user.id, db)
 
 
@@ -350,16 +372,39 @@ def update_meeting(
     db: Session = Depends(get_db),
 ):
     existing = db.execute(
-        text("SELECT id, created_by, start_time, end_time FROM meetings WHERE id = :meeting_id"),
+        text(
+            """
+            SELECT
+                m.id,
+                m.created_by,
+                m.title,
+                m.description,
+                m.location,
+                COALESCE(m.meeting_type, 'in_person') AS meeting_type,
+                m.start_time,
+                m.end_time,
+                c.owner_type,
+                c.owner_id
+            FROM meetings m
+            JOIN calendars c ON c.id = m.calendar_id
+            WHERE m.id = :meeting_id
+            """
+        ),
         {"meeting_id": meeting_id},
     ).mappings().first()
     if existing is None:
         raise HTTPException(status_code=404, detail="Meeting not found")
-    if existing["created_by"] != current_user.id:
+    if existing["created_by"] != current_user.id and not (
+        existing["owner_type"] == "user" and existing["owner_id"] == current_user.id
+    ):
         raise HTTPException(status_code=403, detail="Only the organizer can update this meeting")
 
     updates = payload.model_dump(exclude_unset=True)
     attendee_emails = updates.pop("attendee_emails", None)
+    should_notify_update = any(
+        field in updates and updates[field] != existing[field]
+        for field in {"title", "description", "location", "meeting_type", "start_time", "end_time"}
+    )
 
     start_time = updates.get("start_time", existing["start_time"])
     end_time = updates.get("end_time", existing["end_time"])
@@ -375,6 +420,12 @@ def update_meeting(
             for key, value in updates.items()
             if key in allowed_fields
         }
+        if "location" in filtered_updates:
+            location_value = filtered_updates["location"] or None
+            filtered_updates["location"] = location_value
+            filtered_updates["location_raw"] = location_value
+            filtered_updates["location_latitude"] = None
+            filtered_updates["location_longitude"] = None
         set_clause = ", ".join(f"{field} = :{field}" for field in filtered_updates)
         filtered_updates["meeting_id"] = meeting_id
         db.execute(
@@ -386,7 +437,12 @@ def update_meeting(
         attendee_user_ids = _resolve_attendee_user_ids(db, [str(email) for email in attendee_emails])
         _replace_attendees(meeting_id, current_user.id, attendee_user_ids, db)
 
+    if should_notify_update:
+        _reset_non_organizer_rsvps(meeting_id, current_user.id, db)
+
     db.commit()
+    if should_notify_update:
+        notify_meeting_updated(meeting_id, db)
     return _serialize_meeting(meeting_id, current_user.id, db)
 
 
@@ -410,6 +466,7 @@ def cancel_meeting(
         {"meeting_id": meeting_id},
     )
     db.commit()
+    notify_meeting_cancelled(meeting_id, db)
     return _serialize_meeting(meeting_id, current_user.id, db)
 
 

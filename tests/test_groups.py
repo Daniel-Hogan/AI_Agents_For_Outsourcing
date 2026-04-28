@@ -59,3 +59,24 @@ def test_join_group_by_id_and_prevent_duplicate_membership(client):
         json={"groupId": group_id},
     )
     assert duplicate.status_code == 409
+
+
+def test_join_group_by_padded_token(client):
+    owner_access = _register(client, "owner3@example.com")
+    created = client.post(
+        "/groups/",
+        headers={"Authorization": f"Bearer {owner_access}"},
+        json={"name": "Research"},
+    )
+    assert created.status_code == 200, created.text
+    token = f"{created.json()['id']:09d}"
+
+    member_access = _register(client, "member2@example.com")
+    joined = client.post(
+        "/groups/join",
+        headers={"Authorization": f"Bearer {member_access}"},
+        json={"inviteCode": token},
+    )
+    assert joined.status_code == 200, joined.text
+    assert joined.json()["name"] == "Research"
+    assert joined.json()["role"] == "member"

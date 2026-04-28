@@ -22,21 +22,15 @@ def _require_db():
             pass
 
 
-@pytest.fixture(scope="session")
-def client() -> TestClient:
-    app = create_app()
-    with TestClient(app) as test_client:
-        yield test_client
-
-
-@pytest.fixture(autouse=True)
-def _db_cleanup():
+def _truncate_all_tables() -> None:
     db = SessionLocal()
     try:
         db.execute(
             text(
                 """
                 TRUNCATE TABLE
+                    notifications,
+                    notification_preferences,
                     meeting_attendees,
                     meetings,
                     user_calendars,
@@ -59,3 +53,17 @@ def _db_cleanup():
         db.rollback()
     finally:
         db.close()
+
+
+@pytest.fixture()
+def _db_cleanup():
+    _truncate_all_tables()
+    yield
+    _truncate_all_tables()
+
+
+@pytest.fixture()
+def client(_db_cleanup) -> TestClient:
+    app = create_app()
+    with TestClient(app) as test_client:
+        yield test_client

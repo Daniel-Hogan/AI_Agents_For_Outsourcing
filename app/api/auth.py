@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
+from app.core.avatar import normalize_avatar_color_id
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
@@ -24,6 +25,7 @@ from app.schemas.auth import (
     MeResponse,
     RegisterRequest,
     TokenResponse,
+    UpdateProfileRequest,
 )
 
 
@@ -193,6 +195,58 @@ def me(user: User = Depends(get_current_user)):
         last_name=user.last_name,
         email=user.email,
         phone=user.phone,
+        avatar_color=normalize_avatar_color_id(user.avatar_color),
+    )
+
+
+@router.patch("/me", response_model=MeResponse)
+def update_me(
+    payload: UpdateProfileRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if payload.new_password:
+        if not payload.current_password:
+            raise HTTPException(status_code=400, detail="Current password is required to set a new password")
+        cred = db.get(PasswordCredential, current_user.id)
+        if cred is None or not verify_password(payload.current_password, cred.password_hash):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+        cred.password_hash = hash_password(payload.new_password)
+
+    if payload.first_name is not None:
+        first_name = payload.first_name.strip()
+        if not first_name:
+            raise HTTPException(status_code=422, detail="First name cannot be empty")
+        current_user.first_name = first_name
+
+    if payload.last_name is not None:
+        last_name = payload.last_name.strip()
+        if not last_name:
+            raise HTTPException(status_code=422, detail="Last name cannot be empty")
+        current_user.last_name = last_name
+
+    if payload.email is not None:
+        email_norm = payload.email.strip().lower()
+        if not email_norm:
+            raise HTTPException(status_code=422, detail="Email cannot be empty")
+        if email_norm != current_user.email:
+            existing = db.execute(select(User).where(User.email == email_norm)).scalar_one_or_none()
+            if existing is not None:
+                raise HTTPException(status_code=409, detail="Email already in use")
+            current_user.email = email_norm
+
+    if payload.avatar_color is not None:
+        current_user.avatar_color = normalize_avatar_color_id(payload.avatar_color)
+
+    db.commit()
+    db.refresh(current_user)
+    return MeResponse(
+        id=current_user.id,
+        first_name=current_user.first_name,
+        last_name=current_user.last_name,
+        email=current_user.email,
+        phone=current_user.phone,
+        avatar_color=normalize_avatar_color_id(current_user.avatar_color),
     )
 
 
