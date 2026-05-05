@@ -5,6 +5,139 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Dashboard</title>
   {% include "_theme_head.html" %}
+  <style>
+    .dashboard-page .app-page {
+      max-width: 100% !important;
+      padding-left: 6rem;
+      padding-right: 6rem;
+    }
+    .dashboard-page .card {
+      width: 100%;
+      max-width: 100%;
+    }
+    .dashboard-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+    .dashboard-stat-badge {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.1rem;
+    }
+    .stat-number {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--text, #0f172a);
+      line-height: 1;
+    }
+    .stat-label {
+      font-size: 0.8rem;
+      color: var(--muted, #64748b);
+    }
+    .dashboard-divider {
+      border: none;
+      border-top: 1px solid var(--border, #e2e8f0);
+      margin: 1.5rem 0;
+    }
+    .dashboard-sections {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+    }
+    @media (max-width: 768px) {
+      .dashboard-sections { grid-template-columns: 1fr; }
+    }
+    .dashboard-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+    .dashboard-section-header .section-title {
+      margin: 0.15rem 0 0;
+      font-size: 1.2rem;
+    }
+    .meeting-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .meeting-list-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      border-radius: 0.75rem;
+      background: var(--card-muted, #f8fafc);
+      border: 1px solid var(--border, #e2e8f0);
+      text-decoration: none;
+      color: inherit;
+      transition: background 0.15s;
+      gap: 0.75rem;
+    }
+    a.meeting-list-item:hover {
+      background: var(--surface-hover, #f1f5f9);
+    }
+    .meeting-list-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      min-width: 0;
+    }
+    .meeting-list-title {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--text, #0f172a);
+    }
+    .meeting-list-time {
+      font-size: 0.8rem;
+      color: var(--muted, #64748b);
+    }
+    .meeting-list-location {
+      font-size: 0.78rem;
+      color: var(--muted, #94a3b8);
+    }
+    .meeting-list-role {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.2rem 0.6rem;
+      border-radius: 99px;
+      white-space: nowrap;
+      background: var(--border, #e2e8f0);
+      color: var(--muted-strong, #475569);
+      flex-shrink: 0;
+    }
+    .role-organizer { background: #dbeafe; color: #1d4ed8; }
+    .role-participant { background: #f0fdf4; color: #15803d; }
+    .badge-warning {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 0.2rem 0.6rem;
+      border-radius: 99px;
+      flex-shrink: 0;
+    }
+    .dashboard-show-more {
+      display: block;
+      text-align: center;
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+    }
+    .empty-state-message {
+      color: var(--muted, #64748b);
+      font-size: 0.9rem;
+      margin: 0;
+    }
+  </style>
 </head>
 <body class="dashboard-page">
   {% include "_app_header.html" %}
@@ -17,20 +150,97 @@
         {% endfor %}
       </div>
     {% endif %}
-    <section class="card dashboard-card">
+
+    <section class="card">
+
       <div class="dashboard-header">
         <div>
           <p class="section-kicker">Control Center</p>
           <h2 class="page-title">Dashboard</h2>
           <p class="page-subtle-copy">
-            You are signed in as <strong>{{ email }}</strong>.
+            Welcome back, <strong>{{ current_user_name }}</strong>.
           </p>
+        </div>
+        <div class="dashboard-stat-badge">
+          <span class="stat-number">{{ meetings_this_week }}</span>
+          <span class="stat-label">meeting{{ "s" if meetings_this_week != 1 else "" }} this week</span>
         </div>
       </div>
 
-      <p class="page-subtle-copy dashboard-copy-block">
-        Use the header to move between meetings, calendar, availability, groups, and settings without each page carrying its own stack of buttons.
-      </p>
+      <hr class="dashboard-divider" />
+
+      <div class="dashboard-sections">
+
+        <div>
+          <div class="dashboard-section-header">
+            <div>
+              <p class="section-kicker">What's Next</p>
+              <h3 class="section-title">Upcoming Meetings</h3>
+            </div>
+            <a href="/calendar" class="btn btn-outline btn-sm">View full calendar</a>
+          </div>
+
+          {% if upcoming_meetings %}
+            <ul class="meeting-list">
+              {% for meeting in upcoming_meetings %}
+                <a class="meeting-list-item" href="/meetings/{{ meeting.id }}">
+                  <div class="meeting-list-meta">
+                    <span class="meeting-list-title">{{ meeting.title }}</span>
+                    <span class="meeting-list-time">{{ meeting.day_label }} · {{ meeting.time_range_label }}</span>
+                    {% if meeting.location_label and meeting.location_label != "Location TBD" %}
+                      <span class="meeting-list-location">{{ meeting.location_label }}</span>
+                    {% endif %}
+                  </div>
+                  <span class="meeting-list-role role-{{ meeting.role_label | lower }}">{{ meeting.role_label }}</span>
+                </a>
+              {% endfor %}
+            </ul>
+            {% if upcoming_meetings_total > 5 %}
+              <a href="/meetings/overview" class="btn btn-ghost btn-sm dashboard-show-more">
+                Show {{ upcoming_meetings_total - 5 }} more
+              </a>
+            {% endif %}
+          {% else %}
+            <div style="display:flex;flex-direction:column;gap:0.5rem;padding:0.25rem 0;">
+              <p class="empty-state-message">No meetings on the horizon yet.</p>
+              <a href="/meetings" class="btn btn-primary" style="align-self:flex-start;margin-top:0.25rem">Schedule a meeting</a>
+            </div>
+          {% endif %}
+        </div>
+
+        <div>
+          <div class="dashboard-section-header">
+            <div>
+              <p class="section-kicker">Action Required</p>
+              <h3 class="section-title">Pending RSVPs</h3>
+            </div>
+            {% if pending_rsvps %}
+              <span class="badge badge-warning">{{ pending_rsvps | length }} pending</span>
+            {% endif %}
+          </div>
+
+          {% if pending_rsvps %}
+            <ul class="meeting-list">
+              {% for meeting in pending_rsvps %}
+                <a class="meeting-list-item" href="/meetings/{{ meeting.id }}">
+                  <div class="meeting-list-meta">
+                    <span class="meeting-list-title">{{ meeting.title }}</span>
+                    <span class="meeting-list-time">{{ meeting.day_label }} · {{ meeting.time_range_label }}</span>
+                    {% if meeting.organizer_email %}
+                      <span class="meeting-list-location">From {{ meeting.organizer_email }}</span>
+                    {% endif %}
+                  </div>
+                  <span class="meeting-list-role">Respond</span>
+                </a>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="empty-state-message">You're all caught up — no pending invites.</p>
+          {% endif %}
+        </div>
+
+      </div>
+
     </section>
   </main>
 </body>

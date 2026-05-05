@@ -149,34 +149,28 @@
                 </section>
 
                 <div class="overview-actions">
-                  {% if meeting['can_manage'] %}
-                    <details class="overview-action-panel">
-                      <summary class="btn btn-soft btn-inline">Reschedule</summary>
-                      <form method="POST" action="{{ url_for('web_meetings_overview_reschedule') }}" class="overview-inline-form">
+                  {% if meeting['is_participant'] and not meeting['can_manage'] %}
+                    <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem;">
+                      <span class="field-label">Your RSVP:</span>
+                      <form method="POST" action="{{ url_for('web_meetings_overview_rsvp') }}" style="display:inline;">
                         <input type="hidden" name="meeting_id" value="{{ meeting['id'] }}" />
                         <input type="hidden" name="scope" value="{{ overview_scope }}" />
-
-                        <label class="form-field">
-                          <span class="field-label">Start</span>
-                          <input class="text-input" type="datetime-local" name="start_time" value="{{ meeting['start_input_value'] }}" required />
-                        </label>
-
-                        <label class="form-field">
-                          <span class="field-label">End</span>
-                          <input class="text-input" type="datetime-local" name="end_time" value="{{ meeting['end_input_value'] }}" required />
-                        </label>
-
-                        <div class="settings-actions">
-                          <button class="btn btn-primary btn-inline-wide" type="submit">Save new time</button>
-                        </div>
+                        <input type="hidden" name="status" value="accepted" />
+                        <button class="btn btn-inline btn-sm{% if meeting.get('current_user_status') == 'accepted' %} btn-primary{% else %} btn-soft{% endif %}" type="submit">✓ Accept</button>
                       </form>
-                    </details>
-
-                    <form method="POST" action="{{ url_for('web_meetings_overview_cancel') }}">
-                      <input type="hidden" name="meeting_id" value="{{ meeting['id'] }}" />
-                      <input type="hidden" name="scope" value="{{ overview_scope }}" />
-                      <button class="btn btn-soft btn-inline overview-cancel-button" type="submit">Cancel meeting</button>
-                    </form>
+                      <form method="POST" action="{{ url_for('web_meetings_overview_rsvp') }}" style="display:inline;">
+                        <input type="hidden" name="meeting_id" value="{{ meeting['id'] }}" />
+                        <input type="hidden" name="scope" value="{{ overview_scope }}" />
+                        <input type="hidden" name="status" value="maybe" />
+                        <button class="btn btn-inline btn-sm{% if meeting.get('current_user_status') == 'maybe' %} btn-primary{% else %} btn-soft{% endif %}" type="submit">? Maybe</button>
+                      </form>
+                      <form method="POST" action="{{ url_for('web_meetings_overview_rsvp') }}" style="display:inline;">
+                        <input type="hidden" name="meeting_id" value="{{ meeting['id'] }}" />
+                        <input type="hidden" name="scope" value="{{ overview_scope }}" />
+                        <input type="hidden" name="status" value="declined" />
+                        <button class="btn btn-inline btn-sm{% if meeting.get('current_user_status') == 'declined' %} btn-primary{% else %} btn-soft{% endif %}" type="submit">✗ Decline</button>
+                      </form>
+                    </div>
                   {% endif %}
 
                   {% if meeting['can_add_people'] %}

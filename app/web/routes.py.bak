@@ -504,7 +504,14 @@ def _build_calendar_context(meetings: list[dict[str, Any]], *, selected_month_ra
     agenda_items = [_build_agenda_item(dict(meeting)) for meeting in meetings]
     requested_month = _parse_optional_month(selected_month_raw)
     if requested_month is None:
-        requested_month = datetime.now(timezone.utc).date().replace(day=1)
+        requested_month = next(
+            (
+                item["start_dt"].date().replace(day=1)
+                for item in agenda_items
+                if item.get("start_dt") is not None
+            ),
+            datetime.now(timezone.utc).date().replace(day=1),
+        )
 
     month_start = requested_month.replace(day=1)
     month_grid = month_calendar.Calendar(firstweekday=6).monthdatescalendar(month_start.year, month_start.month)
@@ -1649,11 +1656,6 @@ def _load_meetings_overview_items(
                     item.get("location")
                     or ("Link to be shared" if item.get("meeting_type") == "virtual" else "Location TBD")
                 ),
-                "current_user_id": user.id,
-                "current_user_status": next(
-                    (a["status"] for a in attendees if a["user_id"] == user.id),
-                    None,
-                ),
                 "is_group_visible_only": bool(item.get("is_owned_group_meeting")) and not (
                     bool(item.get("is_direct_owner")) or bool(item.get("is_participant"))
                 ),
@@ -2080,15 +2082,18 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
     week_end = now + timedelta(days=7)
 
+    # All upcoming meetings
     all_upcoming = _load_member_upcoming_meetings(db, user_id=user.id)
 
+    # Count this week
     meetings_this_week = sum(
         1 for m in all_upcoming
         if m.get("start_time") and _coerce_datetime_value(m["start_time"]) and
         now <= _coerce_datetime_value(m["start_time"]) <= week_end
     )
 
-    pending_rsvps_rows = db.execute(
+    # Pending RSVPs (invited but not yet responded)
+    pending_rsvps = db.execute(
         text("""
             SELECT m.id, m.title, m.start_time, m.end_time, creator.email AS organizer_email
             FROM meeting_attendees ma
@@ -2103,14 +2108,14 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         {"user_id": user.id},
     ).mappings().all()
 
-    pending_rsvps = []
-    for row in pending_rsvps_rows:
+    pending_rsvp_items = []
+    for row in pending_rsvps:
         item = dict(row)
         start_dt = _coerce_datetime_value(item.get("start_time"))
         end_dt = _coerce_datetime_value(item.get("end_time"))
         item["day_label"] = _format_day_label(start_dt.date()) if start_dt else ""
         item["time_range_label"] = f"{_format_time_label(start_dt)} - {_format_time_label(end_dt)}"
-        pending_rsvps.append(item)
+        pending_rsvp_items.append(item)
 
     return templates.TemplateResponse(
         request=request,
@@ -2121,7 +2126,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "upcoming_meetings": all_upcoming[:5],
             "upcoming_meetings_total": len(all_upcoming),
             "meetings_this_week": meetings_this_week,
-            "pending_rsvps": pending_rsvps,
+            "pending_rsvps": pending_rsvp_items,
         },
     )
 
@@ -3588,40 +3593,7 @@ def meeting_detail(meeting_id: int, request: Request, db: Session = Depends(get_
             "messages": _pop_flashes(request),
         },
     )
-@router.post("/meetings/overview/rsvp", name="web_meetings_overview_rsvp")
-def meetings_overview_rsvp(
-    request: Request,
-    meeting_id: int = Form(...),
-    status: str = Form(...),
-    scope: str = Form("mine"),
-    db: Session = Depends(get_db),
-):
-    user = _current_user(request, db)
-    if user is None:
-        _push_flash(request, "error", "Please sign in first.")
-        return RedirectResponse(url="/", status_code=303)
 
-    valid_statuses = {"accepted", "declined", "maybe"}
-    if status not in valid_statuses:
-        _push_flash(request, "error", "Invalid RSVP status.")
-        return RedirectResponse(url=_meetings_overview_redirect_url(scope), status_code=303)
-
-    result = db.execute(
-        text("""
-            UPDATE meeting_attendees
-            SET status = :status
-            WHERE meeting_id = :meeting_id AND user_id = :user_id
-        """),
-        {"status": status, "meeting_id": meeting_id, "user_id": user.id},
-    )
-    db.commit()
-
-    if result.rowcount == 0:
-        _push_flash(request, "error", "You are not an attendee of this meeting.")
-    else:
-        _push_flash(request, "success", f"RSVP updated to {status}.")
-
-    return RedirectResponse(url=_meetings_overview_redirect_url(scope), status_code=303)
 
 @router.post("/logout", name="web_logout")
 def logout(request: Request):

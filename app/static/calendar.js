@@ -109,9 +109,16 @@ function initCalendarModal() {
     editStartInput.value = button.dataset.startValue || "";
     editEndInput.value = button.dataset.endValue || "";
 
-    const canEdit = button.dataset.canEdit === "true";
+   const canEdit = button.dataset.canEdit === "true";
     editToggleButton.hidden = !canEdit;
     closeEditForm();
+
+    const cancelForm = modal.querySelector("[data-calendar-cancel-form]");
+    const cancelMeetingId = modal.querySelector("[data-calendar-cancel-meeting-id]");
+    if (cancelForm && cancelMeetingId) {
+      cancelMeetingId.value = button.dataset.meetingId || "";
+      cancelForm.style.display = canEdit ? "block" : "none";
+    }
 
     modal.hidden = false;
     document.body.classList.add("calendar-modal-open");
