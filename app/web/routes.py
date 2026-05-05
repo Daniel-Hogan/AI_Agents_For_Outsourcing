@@ -2081,7 +2081,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     week_end = now + timedelta(days=7)
 
     all_upcoming = _load_member_upcoming_meetings(db, user_id=user.id)
-
+    all_upcoming = _load_member_upcoming_meetings(db, user_id=user.id)
     meetings_this_week = sum(
         1 for m in all_upcoming
         if m.get("start_time") and _coerce_datetime_value(m["start_time"]) and
