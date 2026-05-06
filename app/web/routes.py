@@ -3223,6 +3223,7 @@ def meetings_create(
 
     invited_count = 0
     missing_users: list[str] = []
+    added_user_ids: list[int] = []
     for email in emails:
         invitee = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
         if invitee is None:
@@ -3242,6 +3243,7 @@ def meetings_create(
         )
         if invitee.id != user.id:
             invited_count += 1
+            added_user_ids.append(invitee.id)
 
     travel_warnings = get_travel_warning_service().evaluate_meeting(
         db,
@@ -3259,6 +3261,8 @@ def meetings_create(
         persist=True,
     )
     db.commit()
+    if added_user_ids:
+        notify_meeting_invite(meeting_id, db, attendee_user_ids=added_user_ids)
 
     summary = f"Meeting created. Invited {invited_count} user(s)."
     if missing_users:

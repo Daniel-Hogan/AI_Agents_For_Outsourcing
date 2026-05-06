@@ -2,15 +2,30 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
 from sqlalchemy import text
 
+from app.core.config import settings
 from app.db.session import SessionLocal
 from app.services.notifications import (
     REMINDER_LOCK_ID,
     create_due_reminder_notifications,
     start_notification_scheduler,
     stop_notification_scheduler,
+    _send_email_notification,
 )
+
+
+class NoopTravelWarningService:
+    def evaluate_meeting(self, db, *, user, meeting, persist=False):
+        return []
+
+
+@pytest.fixture(autouse=True)
+def _deterministic_email_settings(monkeypatch):
+    monkeypatch.setattr(settings, "resend_api_key", None)
+    monkeypatch.setattr(settings, "email_from_address", None)
+    monkeypatch.setattr(settings, "app_base_url", "http://127.0.0.1:8000")
 
 
 def register_user(client, *, first_name: str, last_name: str, email: str, password: str = "supersecret123"):
@@ -38,6 +53,57 @@ def web_login(client, *, email: str, password: str = "supersecret123") -> None:
         follow_redirects=False,
     )
     assert response.status_code == 303, response.text
+
+
+def test_web_meeting_create_notifies_invited_user(client, monkeypatch):
+    register_user(client, first_name="Grace", last_name="Hopper", email="grace@example.com")
+    register_user(client, first_name="Ada", last_name="Lovelace", email="ada@example.com")
+    web_login(client, email="ada@example.com")
+    monkeypatch.setattr("app.web.routes.get_travel_warning_service", lambda: NoopTravelWarningService())
+
+    response = client.post(
+        "/meetings/create",
+        data={
+            "title": "Python UI Invite",
+            "meeting_type": "virtual",
+            "location": "https://zoom.example.com/python-ui-invite",
+            "location_raw": "https://zoom.example.com/python-ui-invite",
+            "location_latitude": "",
+            "location_longitude": "",
+            "start_time": "2030-05-01T09:00",
+            "end_time": "2030-05-01T10:00",
+            "invitees": "grace@example.com",
+            "q": "",
+            "status": "",
+            "mine": "",
+            "day": "2030-05-01",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303, response.text
+
+    db = SessionLocal()
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT channel, type, status, title, message
+                FROM notifications
+                WHERE user_id = 1
+                ORDER BY id ASC
+                """
+            )
+        ).fetchall()
+    finally:
+        db.close()
+
+    assert [(row.channel, row.type, row.status) for row in rows] == [
+        ("in_app", "invite", "sent"),
+        ("email", "invite", "skipped"),
+    ]
+    assert rows[1].title == "Meeting invite: Python UI Invite"
+    assert "Meeting link: https://zoom.example.com/python-ui-invite" in rows[1].message
+    assert "Manage your RSVP" not in rows[1].message
 
 
 def test_notification_preferences_round_trip(client):
@@ -158,6 +224,137 @@ def test_notifications_created_for_invite_update_cancel(client):
         ("in_app", "cancel", "sent"),
         ("email", "cancel", "skipped"),
     ]
+
+
+def test_email_invite_message_uses_location_or_meeting_link(client):
+    organizer_token = register_user(client, first_name="Ada", last_name="Lovelace", email="ada@example.com")
+    register_user(client, first_name="Grace", last_name="Hopper", email="grace@example.com")
+
+    in_person_response = client.post(
+        "/api/meetings/",
+        headers=auth_headers(organizer_token),
+        json={
+            "title": "SD Meeting",
+            "location": "Scott Hall",
+            "meeting_type": "in_person",
+            "start_time": "2030-04-23T11:00:00Z",
+            "end_time": "2030-04-23T12:00:00Z",
+            "attendee_emails": ["grace@example.com"],
+        },
+    )
+    assert in_person_response.status_code == 200, in_person_response.text
+
+    db = SessionLocal()
+    try:
+        in_person_message = db.execute(
+            text(
+                """
+                SELECT message
+                FROM notifications
+                WHERE user_id = 2 AND channel = 'email' AND type = 'invite'
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            )
+        ).scalar_one()
+    finally:
+        db.close()
+
+    assert "Location: Scott Hall" in in_person_message
+    assert "Meeting link:" not in in_person_message
+    assert "Manage your RSVP" not in in_person_message
+
+    virtual_response = client.post(
+        "/api/meetings/",
+        headers=auth_headers(organizer_token),
+        json={
+            "title": "Remote SD Meeting",
+            "location": "https://zoom.example.com/meeting-123",
+            "meeting_type": "virtual",
+            "start_time": "2030-04-24T11:00:00Z",
+            "end_time": "2030-04-24T12:00:00Z",
+            "attendee_emails": ["grace@example.com"],
+        },
+    )
+    assert virtual_response.status_code == 200, virtual_response.text
+
+    db = SessionLocal()
+    try:
+        virtual_message = db.execute(
+            text(
+                """
+                SELECT message
+                FROM notifications
+                WHERE user_id = 2 AND channel = 'email' AND type = 'invite'
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            )
+        ).scalar_one()
+    finally:
+        db.close()
+
+    assert "Meeting link: https://zoom.example.com/meeting-123" in virtual_message
+    assert "Location:" not in virtual_message
+    assert "Manage your RSVP" not in virtual_message
+
+
+def test_email_provider_payload_preserves_line_breaks_and_single_app_link(client, monkeypatch):
+    register_user(client, first_name="Grace", last_name="Hopper", email="grace@example.com")
+
+    monkeypatch.setattr(settings, "resend_api_key", "test-api-key")
+    monkeypatch.setattr(settings, "email_from_address", "notifications@example.com")
+    monkeypatch.setattr(settings, "email_from_name", "Scheduler AI")
+
+    sent_payloads = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"id": "email_123"}
+
+    def fake_post(url, *, headers, json, timeout):
+        sent_payloads.append(json)
+        return FakeResponse()
+
+    monkeypatch.setattr("app.services.notifications.requests.post", fake_post)
+
+    db = SessionLocal()
+    try:
+        _send_email_notification(
+            user_id=1,
+            recipient_email="grace@example.com",
+            meeting_id=None,
+            notification_type="invite",
+            title="Meeting invite: Senior D Meeting",
+            message=(
+                "swagger lagger invited you to 'senior d meetnig'.\n"
+                "When: May 09, 2026 09:00 AM to 10:00 AM UTC\n"
+                "Meeting link: zoom"
+            ),
+            db=db,
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    payload = sent_payloads[0]
+    assert payload["html"] == (
+        "<p>swagger lagger invited you to &#x27;senior d meetnig&#x27;.<br>"
+        "When: May 09, 2026 09:00 AM to 10:00 AM UTC<br>"
+        "Meeting link: zoom</p>"
+        '<p><a href="http://127.0.0.1:8000/meetings">Open Scheduler AI</a></p>'
+    )
+    assert payload["html"].count("Open Scheduler AI") == 1
+    assert "Manage your RSVP" not in payload["html"]
+    assert payload["text"] == (
+        "swagger lagger invited you to 'senior d meetnig'.\n"
+        "When: May 09, 2026 09:00 AM to 10:00 AM UTC\n"
+        "Meeting link: zoom\n\n"
+        "Open Scheduler AI: http://127.0.0.1:8000/meetings"
+    )
 
 
 def test_notification_bell_supports_session_auth_and_open_marks_visible_items_read(client):

@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     resend_api_key: str | None = None
     email_from_address: str | None = None
     email_from_name: str = "AI Scheduler"
-    app_base_url: str = "http://localhost:5173"
+    app_base_url: str = "http://127.0.0.1:8000"
 
     log_level: str = "INFO"
 

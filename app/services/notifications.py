@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
@@ -481,6 +482,57 @@ def _notification_copy(notification_type: str, meeting: dict) -> tuple[str, str]
     return title, message
 
 
+def _email_location_line(meeting: dict) -> str:
+    details_label = "Meeting link" if meeting["meeting_type"] == "virtual" else "Location"
+    details_value = meeting["location"] or "TBD"
+    return f"{details_label}: {details_value}"
+
+
+def _email_notification_copy(notification_type: str, meeting: dict) -> tuple[str, str]:
+    organizer_name = _format_person_name(
+        meeting.get("organizer_first_name"),
+        meeting.get("organizer_last_name"),
+        meeting.get("organizer_email"),
+        "Your organizer",
+    )
+    meeting_window = _format_meeting_window(meeting["start_time"], meeting["end_time"])
+
+    if notification_type == "invite":
+        title = f"Meeting invite: {meeting['title']}"
+        message = (
+            f"{organizer_name} invited you to '{meeting['title']}'.\n"
+            f"When: {meeting_window}\n"
+            f"{_email_location_line(meeting)}"
+        )
+    elif notification_type == "update":
+        title = f"Meeting updated: {meeting['title']}"
+        message = (
+            f"'{meeting['title']}' was updated or rescheduled.\n"
+            f"New time: {meeting_window}\n"
+            f"{_email_location_line(meeting)}"
+        )
+    elif notification_type == "cancel":
+        title = f"Meeting cancelled: {meeting['title']}"
+        message = (
+            f"'{meeting['title']}' has been cancelled.\n"
+            f"Originally scheduled for: {meeting_window}"
+        )
+    else:
+        return _notification_copy(notification_type, meeting)
+
+    return title, message
+
+
+def _email_html_body(message: str) -> str:
+    message_lines = [line for line in message.splitlines() if line.strip()]
+    rendered_lines = "<br>".join(html.escape(line) for line in message_lines)
+    app_url = f"{settings.app_base_url}/meetings"
+    return (
+        f"<p>{rendered_lines}</p>"
+        + f'<p><a href="{html.escape(app_url, quote=True)}">Open Scheduler AI</a></p>'
+    )
+
+
 def _send_email_notification(
     *,
     user_id: int,
@@ -518,10 +570,8 @@ def _send_email_notification(
                 "from": f"{settings.email_from_name} <{settings.email_from_address}>",
                 "to": [recipient_email],
                 "subject": title,
-                "html": (
-                    f"<p>{message}</p>"
-                    f"<p><a href=\"{settings.app_base_url}/meetings\">Open Scheduler AI</a></p>"
-                ),
+                "html": _email_html_body(message),
+                "text": f"{message}\n\nOpen Scheduler AI: {settings.app_base_url}/meetings",
             },
             timeout=10,
         )
@@ -562,6 +612,7 @@ def _notify_attendees(
 ) -> None:
     meeting, attendees = _load_meeting_context(meeting_id, db)
     title, message = _notification_copy(notification_type, meeting)
+    email_title, email_message = _email_notification_copy(notification_type, meeting)
     allowed_user_ids = set(attendee_user_ids or [])
 
     for attendee in attendees:
@@ -590,8 +641,8 @@ def _notify_attendees(
                 recipient_email=attendee["email"],
                 meeting_id=meeting_id,
                 notification_type=notification_type,
-                title=title,
-                message=message,
+                title=email_title,
+                message=email_message,
                 db=db,
             )
 
