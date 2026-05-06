@@ -107,13 +107,14 @@ function initPlanner(root) {
 
   const weekStart = getWeekStart(parseDateTimeLocal(startHidden.value));
   const slotStep = 15;
-  const dayStart = 7 * 60;
-  const dayEnd = 23 * 60;
-  const holdDelayMs = 80;
-  let dragging = false;
+  const dayStart = 0 * 60;
+  const dayEnd = 24 * 60;
+  const holdDelayMs = 220;
   let placement = null;
   let holdTimerId = null;
   let blockHoldActive = false;
+  let holdPointerId = null;
+  let holdPreviewPlacement = null;
 
   function setMeetingTypeFromUi() {
     const selected = meetingTypeRadios.find((radio) => radio.checked);
@@ -135,9 +136,9 @@ function initPlanner(root) {
     draftTime.textContent = `${formatDisplayTime(startMinutes)} - ${formatDisplayTime(endMinutes)}`;
   }
 
-  function renderPlacement() {
+  function renderPlacement(targetPlacement = placement) {
     clearPlacementRendering();
-    if (!placement) return;
+    if (!targetPlacement) return;
 
     const activeSlots = [];
     const unavailableNameSet = new Set();
@@ -146,19 +147,28 @@ function initPlanner(root) {
       const slotDay = Number(slot.dataset.dayOfWeek || "0");
       const slotStart = Number(slot.dataset.startMinutes || "0");
       const slotEnd = Number(slot.dataset.endMinutes || "0");
-      const overlaps = placement.dayOfWeek === slotDay && placement.startMinutes < slotEnd && placement.endMinutes > slotStart;
+      const overlaps = targetPlacement.dayOfWeek === slotDay && targetPlacement.startMinutes < slotEnd && targetPlacement.endMinutes > slotStart;
       if (!overlaps) return;
 
-      const isStart = slotStart === placement.startMinutes;
-      const isEnd = slotEnd === placement.endMinutes;
+      const isStart = slotStart === targetPlacement.startMinutes;
+      const isEnd = slotEnd === targetPlacement.endMinutes;
       slot.classList.add("is-active");
       slot.classList.add(isStart ? "is-selected-start" : isEnd ? "is-selected-end" : "is-selected-middle");
       activeSlots.push(slot);
 
-      if (slot.dataset.status === "partial") {
+      if (slot.dataset.status === "partial" || slot.dataset.blockedByMeetingMembers) {
         const rawMembers = String(slot.dataset.unavailableMembers || "");
         if (rawMembers) {
           rawMembers
+            .split("||")
+            .map((name) => name.trim())
+            .filter(Boolean)
+            .forEach((name) => unavailableNameSet.add(name));
+        }
+        
+        const rawBlockedMembers = String(slot.dataset.blockedByMeetingMembers || "");
+        if (rawBlockedMembers) {
+          rawBlockedMembers
             .split("||")
             .map((name) => name.trim())
             .filter(Boolean)
@@ -190,9 +200,10 @@ function initPlanner(root) {
     blockCopy.className = "group-meeting-block-copy";
     blockCopy.innerHTML = `
       <strong>${draftTitle.textContent || "Team sync"}</strong>
-      <span>${formatDisplayTime(placement.startMinutes)} - ${formatDisplayTime(placement.endMinutes)}</span>
+      <span>${formatDisplayTime(targetPlacement.startMinutes)} - ${formatDisplayTime(targetPlacement.endMinutes)}</span>
     `;
     block.appendChild(blockCopy);
+    block._blockCopy = blockCopy;
     attachBlockHoldHandlers(block);
     overlay.appendChild(block);
 
@@ -222,12 +233,21 @@ function initPlanner(root) {
     renderPlacement();
   }
 
-  function placeFromSlot(slot) {
+  function getPlacementFromSlot(slot) {
     const dayOfWeek = Number(slot.dataset.dayOfWeek || "0");
     const slotStart = Number(slot.dataset.startMinutes || "0");
     const duration = clamp(Number(durationInput.value || "60"), slotStep, dayEnd - slotStart);
     const startMinutes = clamp(snapToStep(slotStart, slotStep), dayStart, dayEnd - duration);
-    updateHiddenTimes(dayOfWeek, startMinutes, duration);
+    return {
+      dayOfWeek,
+      startMinutes,
+      endMinutes: startMinutes + duration,
+    };
+  }
+
+  function placeFromSlot(slot) {
+    const nextPlacement = getPlacementFromSlot(slot);
+    updateHiddenTimes(nextPlacement.dayOfWeek, nextPlacement.startMinutes, nextPlacement.endMinutes - nextPlacement.startMinutes);
   }
 
   function getSlotFromPoint(clientX, clientY) {
@@ -247,6 +267,7 @@ function initPlanner(root) {
 
   function startHoldDrag() {
     blockHoldActive = true;
+    holdPreviewPlacement = placement ? { ...placement } : null;
     overlay.classList.add("is-hold-dragging");
   }
 
@@ -255,72 +276,108 @@ function initPlanner(root) {
     if (!blockHoldActive) {
       return;
     }
+      if (placement) {
+        setSummary(placement.dayOfWeek, placement.startMinutes, placement.endMinutes);
+      }
     blockHoldActive = false;
+    holdPointerId = null;
+    holdPreviewPlacement = null;
     overlay.classList.remove("is-hold-dragging");
   }
 
   function attachBlockHoldHandlers(block) {
+    let pointerStartX = 0;
+    let pointerStartY = 0;
+
     block.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) {
         return;
       }
 
+      pointerStartX = event.clientX;
+      pointerStartY = event.clientY;
+      holdPointerId = event.pointerId;
+      holdPreviewPlacement = null;
+      block.style.transform = "";
+      block.classList.remove("is-dragging");
       clearHoldTimer();
       holdTimerId = window.setTimeout(() => {
         startHoldDrag();
+        block.classList.add("is-dragging");
       }, holdDelayMs);
 
       block.setPointerCapture(event.pointerId);
     });
 
     block.addEventListener("pointermove", (event) => {
-      if (!blockHoldActive) {
+      if (event.pointerId !== holdPointerId) {
         return;
       }
 
+      if (!blockHoldActive) {
+        const movedEnough = Math.abs(event.clientX - pointerStartX) > 5 || Math.abs(event.clientY - pointerStartY) > 5;
+        if (!movedEnough) {
+          return;
+        }
+        clearHoldTimer();
+        startHoldDrag();
+        block.classList.add("is-dragging");
+      }
+
+      const deltaX = event.clientX - pointerStartX;
+      const deltaY = event.clientY - pointerStartY;
+      block.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+
+      block.style.pointerEvents = "none";
       const slot = getSlotFromPoint(event.clientX, event.clientY);
+      block.style.pointerEvents = "auto";
       if (slot) {
-        placeFromSlot(slot);
+        holdPreviewPlacement = getPlacementFromSlot(slot);
+          setSummary(
+            holdPreviewPlacement.dayOfWeek,
+            holdPreviewPlacement.startMinutes,
+            holdPreviewPlacement.endMinutes,
+          );
+          if (block._blockCopy) {
+            block._blockCopy.innerHTML = `
+              <strong>${draftTitle.textContent || "Team sync"}</strong>
+              <span>${formatDisplayTime(holdPreviewPlacement.startMinutes)} - ${formatDisplayTime(holdPreviewPlacement.endMinutes)}</span>
+            `;
+          }
       }
     });
 
-    block.addEventListener("pointerup", () => {
+    block.addEventListener("pointerup", (event) => {
+      if (event.pointerId === holdPointerId && blockHoldActive) {
+        block.style.pointerEvents = "none";
+        const releaseSlot = getSlotFromPoint(event.clientX, event.clientY);
+        block.style.pointerEvents = "auto";
+
+        const finalPlacement = releaseSlot ? getPlacementFromSlot(releaseSlot) : holdPreviewPlacement;
+        if (finalPlacement) {
+          const duration = finalPlacement.endMinutes - finalPlacement.startMinutes;
+          updateHiddenTimes(finalPlacement.dayOfWeek, finalPlacement.startMinutes, duration);
+        }
+      }
+      block.style.transform = "";
+      block.classList.remove("is-dragging");
       stopHoldDrag();
     });
 
     block.addEventListener("pointercancel", () => {
+      block.style.transform = "";
+      block.classList.remove("is-dragging");
       stopHoldDrag();
     });
 
     block.addEventListener("lostpointercapture", () => {
+      block.style.transform = "";
+      block.classList.remove("is-dragging");
       stopHoldDrag();
     });
   }
 
-  draft.addEventListener("dragstart", () => {
-    dragging = true;
-    draft.classList.add("is-dragging");
-  });
-
-  draft.addEventListener("dragend", () => {
-    dragging = false;
-    draft.classList.remove("is-dragging");
-  });
-
   slots.forEach((slot) => {
-    slot.addEventListener("dragover", (event) => {
-      if (!dragging) return;
-      event.preventDefault();
-      placeFromSlot(slot);
-    });
-
-    slot.addEventListener("drop", (event) => {
-      event.preventDefault();
-      dragging = false;
-      draft.classList.remove("is-dragging");
-      placeFromSlot(slot);
-    });
-
     slot.addEventListener("click", () => {
       placeFromSlot(slot);
     });

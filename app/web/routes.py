@@ -296,6 +296,13 @@ def _list_meetings(db: Session, *, user: User, q: str, status: str, mine: bool):
                       AND own_ma.user_id = :current_user_id
                       AND own_ma.status IN ('invited', 'accepted')
                 )
+                OR EXISTS (
+                    SELECT 1
+                    FROM meeting_attendees gm_ma
+                    JOIN group_memberships gm ON gm.user_id = gm_ma.user_id
+                    WHERE gm_ma.meeting_id = m.id
+                      AND gm.user_id = :current_user_id
+                )
             ) AS is_relevant_to_user
         FROM meetings m
         JOIN calendars c ON c.id = m.calendar_id
@@ -980,6 +987,26 @@ def _preferences_to_selected_cells(preferences: list[dict[str, Any]]) -> list[di
     return sorted(selected_cells, key=lambda cell: (cell["day_of_week"], cell["start_minutes"]))
 
 
+def _load_user_accepted_meetings(db: Session, user_id: int) -> list[dict[str, Any]]:
+    """Load user's accepted meetings to block availability slots."""
+    rows = db.execute(
+        text("""
+            SELECT 
+                m.id,
+                m.start_time,
+                m.end_time
+            FROM meetings m
+            JOIN meeting_attendees ma ON ma.meeting_id = m.id
+            WHERE ma.user_id = :user_id
+              AND ma.status = 'accepted'
+              AND (m.status IS NULL OR m.status != 'cancelled')
+            ORDER BY m.start_time ASC
+        """),
+        {"user_id": user_id},
+    ).mappings().all()
+    return [dict(row) for row in rows]
+
+
 def _parse_selected_cells(raw: str) -> list[tuple[int, int]]:
     value = raw.strip()
     if not value:
@@ -1027,6 +1054,7 @@ def _build_availability_calendar(
     preferences: list[dict[str, Any]],
     *,
     selected_cells: list[tuple[int, int]] | None = None,
+    blocked_meetings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     selected_set = set(selected_cells or [])
     if not selected_set:
@@ -1044,8 +1072,22 @@ def _build_availability_calendar(
         end_minutes = end_time.hour * 60 + end_time.minute
         preference_windows[day_idx].append((start_minutes, end_minutes))
 
+    # Convert blocked meetings to time windows per day of week
+    blocked_windows: dict[int, list[tuple[int, int]]] = {day_idx: [] for day_idx, _ in DAY_OPTIONS}
+    if blocked_meetings:
+        for meeting in blocked_meetings:
+            start_dt = _coerce_datetime_value(meeting["start_time"])
+            end_dt = _coerce_datetime_value(meeting["end_time"])
+            if start_dt and end_dt:
+                day_of_week = start_dt.weekday()
+                # Convert Monday=0 to our convention where Sunday=0
+                day_of_week = (day_of_week + 1) % 7
+                start_minutes = start_dt.hour * 60 + start_dt.minute
+                end_minutes = end_dt.hour * 60 + end_dt.minute
+                blocked_windows[day_of_week].append((start_minutes, end_minutes))
+
     rows: list[dict[str, Any]] = []
-    for minute_value in range(7 * 60, 23 * 60, 15):
+    for minute_value in range(0 * 60, 24 * 60, 15):
         slot_end = minute_value + 15
         is_hour = minute_value % 60 == 0
         hour_value = (minute_value // 60) % 12 or 12
@@ -1057,12 +1099,17 @@ def _build_availability_calendar(
                 window_start <= minute_value and window_end >= slot_end
                 for window_start, window_end in preference_windows[day_idx]
             )
+            is_blocked = any(
+                window_start <= minute_value and window_end >= slot_end
+                for window_start, window_end in blocked_windows[day_idx]
+            )
             row_cells.append(
                 {
                     "day_of_week": day_idx,
                     "start_minutes": minute_value,
                     "end_minutes": slot_end,
                     "is_available": is_available,
+                    "is_blocked_by_meeting": is_blocked,
                     "is_selected": (day_idx, minute_value) in selected_set,
                 }
             )
@@ -1095,13 +1142,18 @@ def _availability_context(
     next_path: str,
 ) -> dict[str, Any]:
     preferences = _load_user_preferences(db, user_id)
+    blocked_meetings = _load_user_accepted_meetings(db, user_id)
     selected_cells = _parse_selected_cells(str((form_data or {}).get("selected_cells", "")))
     return {
         "preferences": preferences,
         "day_options": DAY_OPTIONS,
         "day_short_names": DAY_SHORT_NAME_BY_INDEX,
         "availability_form_data": form_data or {"selected_cells": ""},
-        "availability_calendar": _build_availability_calendar(preferences, selected_cells=selected_cells),
+        "availability_calendar": _build_availability_calendar(
+            preferences,
+            selected_cells=selected_cells,
+            blocked_meetings=blocked_meetings,
+        ),
         "availability_selected_cells_json": json.dumps(
             [
                 {"day_of_week": day_idx, "start_minutes": minute}
@@ -1447,6 +1499,13 @@ def _load_member_upcoming_meetings(db: Session, *, user_id: int) -> list[dict[st
                       WHERE ma.meeting_id = m.id
                         AND ma.user_id = :user_id
                   )
+                  OR EXISTS (
+                      SELECT 1
+                      FROM meeting_attendees gm_ma
+                      JOIN group_memberships gm ON gm.user_id = gm_ma.user_id
+                      WHERE gm_ma.meeting_id = m.id
+                        AND gm.user_id = :user_id
+                  )
               )
             ORDER BY m.start_time ASC, m.id ASC
             """
@@ -1520,6 +1579,39 @@ def _build_member_availability_grid(db: Session, *, user_id: int) -> dict[str, A
         "has_preferences": bool(preferences),
         "active_days_label": ", ".join(active_days) if active_days else "",
     }
+
+
+def _get_meetings_for_users(db: Session, *, user_ids: list[int]) -> dict[int, list[dict[str, Any]]]:
+    """Load all meetings for multiple users (any status, any group)."""
+    if not user_ids:
+        return {}
+    
+    rows = db.execute(
+        text("""
+            SELECT 
+                ma.user_id,
+                m.id,
+                m.start_time,
+                m.end_time
+            FROM meetings m
+            JOIN meeting_attendees ma ON ma.meeting_id = m.id
+            WHERE ma.user_id = ANY(:user_ids)
+              AND (m.status IS NULL OR m.status != 'cancelled')
+            ORDER BY m.start_time ASC
+        """),
+        {"user_ids": user_ids},
+    ).mappings().all()
+    
+    meetings_by_user: dict[int, list[dict[str, Any]]] = {uid: [] for uid in user_ids}
+    for row in rows:
+        user_id = int(row["user_id"])
+        meetings_by_user[user_id].append({
+            "id": row["id"],
+            "start_time": row["start_time"],
+            "end_time": row["end_time"],
+        })
+    
+    return meetings_by_user
 
 
 def _build_group_availability_grid(db: Session, *, group_id: int) -> dict[str, Any]:
@@ -1597,9 +1689,26 @@ def _build_group_availability_grid(db: Session, *, group_id: int) -> dict[str, A
                 (start_hours * 60 + start_minutes, end_hours * 60 + end_minutes, int(member["id"]))
             )
 
+    # Load meetings for all group members
+    meetings_by_user = _get_meetings_for_users(db, user_ids=all_member_ids)
+    
+    # Build blocked time windows by day for each user
+    blocked_by_day: dict[int, list[tuple[int, int, int]]] = {day_idx: [] for day_idx, _ in DAY_OPTIONS}
+    for user_id, meetings in meetings_by_user.items():
+        for meeting in meetings:
+            start_dt = _coerce_datetime_value(meeting["start_time"])
+            end_dt = _coerce_datetime_value(meeting["end_time"])
+            if start_dt and end_dt:
+                day_of_week = start_dt.weekday()
+                # Convert Monday=0 to our convention where Sunday=0
+                day_of_week = (day_of_week + 1) % 7
+                start_minutes = start_dt.hour * 60 + start_dt.minute
+                end_minutes = end_dt.hour * 60 + end_dt.minute
+                blocked_by_day[day_of_week].append((start_minutes, end_minutes, user_id))
+
     rows_out: list[dict[str, Any]] = []
-    start_minute = 7 * 60
-    end_minute = 23 * 60
+    start_minute = 0 * 60
+    end_minute = 24 * 60
     total_members = len(members_by_id)
 
     for minute_value in range(start_minute, end_minute, 15):
@@ -1617,6 +1726,12 @@ def _build_group_availability_grid(db: Session, *, group_id: int) -> dict[str, A
                 if window_start < slot_end and window_end > slot_start:
                     available_member_ids.add(member_id)
 
+            # Check for meeting conflicts
+            meeting_blocked_member_ids: set[int] = set()
+            for window_start, window_end, member_id in blocked_by_day[day_idx]:
+                if window_start < slot_end and window_end > slot_start:
+                    meeting_blocked_member_ids.add(member_id)
+
             available_count = len(available_member_ids)
             unavailable_member_ids = [member_id for member_id in all_member_ids if member_id not in available_member_ids]
             status = "none"
@@ -1633,6 +1748,8 @@ def _build_group_availability_grid(db: Session, *, group_id: int) -> dict[str, A
                     "status": status,
                     "unavailable_count": len(unavailable_member_ids),
                     "unavailable_members": [member_name_by_id[member_id] for member_id in unavailable_member_ids],
+                    "blocked_by_meeting_members": [member_name_by_id[member_id] for member_id in meeting_blocked_member_ids],
+                    "has_meeting_conflicts": len(meeting_blocked_member_ids) > 0,
                 }
             )
 
@@ -1734,6 +1851,21 @@ def _meeting_organizer_user_id(meeting_context: dict[str, Any]) -> int | None:
     return int(organizer_id) if organizer_id is not None else None
 
 
+def _user_can_cancel_meeting(
+    *,
+    meeting_id: int,
+    user: User,
+    meeting_context: dict[str, Any] | None = None,
+) -> bool:
+    """Check if user is the organizer of the meeting (can cancel)."""
+    context = meeting_context
+    if context is None:
+        return False
+    
+    organizer_user_id = _meeting_organizer_user_id(context)
+    return organizer_user_id == user.id
+
+
 def _user_can_manage_overview_meeting(
     db: Session,
     *,
@@ -1758,29 +1890,13 @@ def _user_can_add_people_to_meeting(
     user: User,
     meeting_context: dict[str, Any] | None = None,
 ) -> bool:
-    if _user_can_manage_overview_meeting(
-        db,
-        meeting_id=meeting_id,
-        user=user,
-        meeting_context=meeting_context,
-    ):
-        return True
+    # Only the organizer can add people to a meeting
+    context = meeting_context or _load_meeting_action_context(db, meeting_id=meeting_id)
+    if context is None:
+        return False
 
-    return bool(
-        db.execute(
-            text(
-                """
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM meeting_attendees
-                    WHERE meeting_id = :meeting_id
-                      AND user_id = :user_id
-                )
-                """
-            ),
-            {"meeting_id": meeting_id, "user_id": user.id},
-        ).scalar_one()
-    )
+    organizer_user_id = _meeting_organizer_user_id(context)
+    return organizer_user_id == user.id
 
 
 def _load_meeting_attendees(db: Session, *, meeting_id: int) -> list[dict[str, Any]]:
@@ -1850,10 +1966,9 @@ def _load_meetings_overview_items(
             SELECT 1
             FROM meeting_attendees group_ma
             JOIN group_memberships gm_member ON gm_member.user_id = group_ma.user_id
-            JOIN group_memberships gm_owner ON gm_owner.group_id = gm_member.group_id
+            JOIN group_memberships gm_user ON gm_user.group_id = gm_member.group_id
             WHERE group_ma.meeting_id = m.id
-              AND gm_owner.user_id = :user_id
-              AND gm_owner.role IN ('owner', 'admin')
+              AND gm_user.user_id = :user_id
         )
     """
     visibility_clause = direct_clause if scope == "mine" else f"({direct_clause} OR {group_clause})"
@@ -1885,7 +2000,13 @@ def _load_meetings_overview_items(
                     WHERE own_ma.meeting_id = m.id
                       AND own_ma.user_id = :user_id
                 ) AS is_participant,
-                {group_clause} AS is_owned_group_meeting
+                {group_clause} AS is_owned_group_meeting,
+                (
+                    SELECT status
+                    FROM meeting_attendees
+                    WHERE meeting_id = m.id
+                      AND user_id = :user_id
+                ) AS current_user_status
             FROM meetings m
             JOIN calendars c ON c.id = m.calendar_id
             LEFT JOIN users creator ON creator.id = m.created_by
@@ -1941,6 +2062,7 @@ def _load_meetings_overview_items(
                 "is_group_visible_only": bool(item.get("is_owned_group_meeting")) and not (
                     bool(item.get("is_direct_owner")) or bool(item.get("is_participant"))
                 ),
+                "is_organizer": _meeting_organizer_user_id(meeting_context) == user.id,
             }
         )
         item["can_manage"] = _user_can_manage_overview_meeting(
@@ -2983,6 +3105,102 @@ def groups_update_member_role(
     return RedirectResponse(url=redirect_url, status_code=303)
 
 
+@router.post("/groups/{group_id}/delete", name="web_groups_delete")
+def groups_delete(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    user = _current_user(request, db)
+    if user is None:
+        _push_flash(request, "error", "Please sign in first.")
+        return RedirectResponse(url="/", status_code=303)
+
+    membership = _load_group_membership(db, user_id=user.id, group_id=group_id)
+    if membership is None:
+        _push_flash(request, "error", "Group not found.")
+        return RedirectResponse(url="/groups", status_code=303)
+
+    if membership["role"] != "owner":
+        _push_flash(request, "error", "Only the group owner can delete this group.")
+        return RedirectResponse(url=f"/groups/{group_id}", status_code=303)
+
+    # Find all meetings associated with this group (past and upcoming)
+    meeting_rows = db.execute(
+        text("""
+            SELECT DISTINCT m.id
+            FROM meetings m
+            JOIN meeting_attendees ma ON ma.meeting_id = m.id
+            JOIN group_memberships gm ON gm.user_id = ma.user_id
+            WHERE gm.group_id = :group_id
+        """),
+        {"group_id": group_id},
+    ).scalars().all()
+
+    # Delete meeting attendees and meetings for each meeting ID
+    for meeting_id in meeting_rows:
+        db.execute(
+            text("DELETE FROM meeting_attendees WHERE meeting_id = :meeting_id"),
+            {"meeting_id": meeting_id},
+        )
+        db.execute(
+            text("DELETE FROM meetings WHERE id = :meeting_id"),
+            {"meeting_id": meeting_id},
+        )
+
+    # Delete all related group data
+    db.execute(text("DELETE FROM group_memberships WHERE group_id = :group_id"), {"group_id": group_id})
+    db.execute(text("DELETE FROM groups WHERE id = :group_id"), {"group_id": group_id})
+    db.commit()
+
+    _push_flash(request, "success", "Group and all associated meetings have been deleted.")
+    return RedirectResponse(url="/groups", status_code=303)
+
+
+@router.post("/groups/{group_id}/leave", name="web_groups_leave")
+def groups_leave(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    user = _current_user(request, db)
+    if user is None:
+        _push_flash(request, "error", "Please sign in first.")
+        return RedirectResponse(url="/", status_code=303)
+
+    membership = _load_group_membership(db, user_id=user.id, group_id=group_id)
+    if membership is None:
+        _push_flash(request, "error", "Group not found.")
+        return RedirectResponse(url="/groups", status_code=303)
+
+    if membership["role"] == "owner":
+        owner_count = int(
+            db.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM group_memberships
+                    WHERE group_id = :group_id
+                      AND role = 'owner'
+                    """
+                ),
+                {"group_id": group_id},
+            ).scalar()
+        )
+        if owner_count == 1:
+            _push_flash(request, "error", "Cannot leave group as the only owner. Please transfer ownership first.")
+            return RedirectResponse(url=f"/groups/{group_id}", status_code=303)
+
+    db.execute(
+        text("DELETE FROM group_memberships WHERE group_id = :group_id AND user_id = :user_id"),
+        {"group_id": group_id, "user_id": user.id},
+    )
+    db.commit()
+
+    _push_flash(request, "success", "You have left the group.")
+    return RedirectResponse(url="/groups", status_code=303)
+
+
 @router.post("/availability/add", name="web_availability_add")
 def availability_add(
     request: Request,
@@ -3386,12 +3604,26 @@ def meetings_create(
     status: str = Form(""),
     mine: str = Form(""),
     day: str = Form(""),
+    group_id: str = Form(""),
     db: Session = Depends(get_db),
 ):
     user = _current_user(request, db)
     if user is None:
         _push_flash(request, "error", "Please sign in first.")
         return RedirectResponse(url="/", status_code=303)
+
+    # Validate group permissions if group_id is provided
+    group_id_normalized = group_id.strip()
+    if group_id_normalized:
+        try:
+            group_id_int = int(group_id_normalized)
+            membership = _load_group_membership(db, user_id=user.id, group_id=group_id_int)
+            if membership is None or not membership.get("can_manage"):
+                _push_flash(request, "error", "You don't have permission to create meetings for this group.")
+                return RedirectResponse(url="/groups", status_code=303)
+        except (ValueError, TypeError):
+            _push_flash(request, "error", "Invalid group ID.")
+            return RedirectResponse(url="/groups", status_code=303)
 
     q_norm = q.strip()
     status_norm = status.strip().lower()
@@ -3786,13 +4018,12 @@ def meetings_overview_cancel(
     if meeting_context is None:
         _push_flash(request, "error", "Meeting not found.")
         return RedirectResponse(url=redirect_url, status_code=303)
-    if not _user_can_manage_overview_meeting(
-        db,
+    if not _user_can_cancel_meeting(
         meeting_id=meeting_id,
         user=user,
         meeting_context=meeting_context,
     ):
-        _push_flash(request, "error", "You do not have permission to cancel this meeting.")
+        _push_flash(request, "error", "Only the meeting organizer can cancel this meeting.")
         return RedirectResponse(url=redirect_url, status_code=303)
     if meeting_context["status"] == "cancelled":
         _push_flash(request, "warning", "This meeting is already cancelled.")
@@ -3811,6 +4042,68 @@ def meetings_overview_cancel(
     db.commit()
     notify_meeting_cancelled(meeting_id, db)
     _push_flash(request, "success", "Meeting cancelled.")
+    return RedirectResponse(url=redirect_url, status_code=303)
+
+
+@router.post("/meetings/overview/rsvp", name="web_meetings_overview_rsvp")
+def meetings_overview_rsvp(
+    request: Request,
+    meeting_id: int = Form(...),
+    status: str = Form(...),
+    scope: str = Form("mine"),
+    db: Session = Depends(get_db),
+):
+    user = _current_user(request, db)
+    if user is None:
+        _push_flash(request, "error", "Please sign in first.")
+        return RedirectResponse(url="/", status_code=303)
+
+    redirect_url = _meetings_overview_redirect_url(scope)
+    
+    # Validate status
+    if status not in ("accepted", "declined", "maybe"):
+        _push_flash(request, "error", "Invalid RSVP status.")
+        return RedirectResponse(url=redirect_url, status_code=303)
+
+    # Check if meeting exists and is not cancelled
+    meeting_context = _load_meeting_action_context(db, meeting_id=meeting_id)
+    if meeting_context is None:
+        _push_flash(request, "error", "Meeting not found.")
+        return RedirectResponse(url=redirect_url, status_code=303)
+    if meeting_context["status"] == "cancelled":
+        _push_flash(request, "error", "Cannot respond to a cancelled meeting.")
+        return RedirectResponse(url=redirect_url, status_code=303)
+
+    # Check if user is invited to this meeting
+    attendee = db.execute(
+        text(
+            """
+            SELECT user_id FROM meeting_attendees
+            WHERE meeting_id = :meeting_id AND user_id = :user_id
+            """
+        ),
+        {"meeting_id": meeting_id, "user_id": user.id},
+    ).scalar_one_or_none()
+    
+    if attendee is None:
+        _push_flash(request, "error", "You are not invited to this meeting.")
+        return RedirectResponse(url=redirect_url, status_code=303)
+
+    # Update RSVP status
+    db.execute(
+        text(
+            """
+            UPDATE meeting_attendees
+            SET status = :status
+            WHERE meeting_id = :meeting_id AND user_id = :user_id
+            """
+        ),
+        {"meeting_id": meeting_id, "user_id": user.id, "status": status},
+    )
+    db.commit()
+    
+    status_labels = {"accepted": "accepted", "declined": "declined", "maybe": "marked maybe"}
+    _push_flash(request, "success", f"You have {status_labels.get(status, status)} this meeting invitation.")
     return RedirectResponse(url=redirect_url, status_code=303)
 
 

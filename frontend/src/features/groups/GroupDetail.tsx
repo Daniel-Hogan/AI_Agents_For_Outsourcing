@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 
 import {
   getGroup,
@@ -22,7 +22,6 @@ function displayName(member: Pick<GroupMember, "first_name" | "last_name">) {
 
 export default function GroupDetail() {
   const { groupId } = useParams();
-  const navigate = useNavigate();
 
   const parsedGroupId = Number(groupId);
 
@@ -70,11 +69,7 @@ export default function GroupDetail() {
       } catch (err) {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : "Failed to load group.";
-        if (message.toLowerCase().includes("unauthorized") || message.toLowerCase().includes("not authenticated")) {
-          localStorage.removeItem("access_token");
-          navigate("/login");
-          return;
-        }
+        // Avoid forcing logout on transient dev-reload/network errors.
         setError(message);
       } finally {
         if (!cancelled) {
@@ -88,7 +83,7 @@ export default function GroupDetail() {
     return () => {
       cancelled = true;
     };
-  }, [navigate, parsedGroupId]);
+  }, [parsedGroupId]);
 
   if (loading) return <div className="p-8 text-slate-400">Loading group workspace...</div>;
   if (error) return <div className="p-8 text-red-400">{error}</div>;

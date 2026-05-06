@@ -134,6 +134,29 @@ function timeChunkHeight(startMinutes: number, endMinutes: number, hour: number)
   return ((chunkEnd - chunkStart) / 60) * 100;
 }
 
+function buildPlacementFromPointer(
+  dayOfWeek: number,
+  hour: number,
+  durationMinutes: number,
+  weekStart: Date,
+  clientY?: number,
+  cellHeight = 60,
+): PlacedMeeting {
+  const minuteOffset = clientY === undefined ? 0 : clamp(Math.floor((clientY / cellHeight) * 60), 0, 59);
+  const rawStart = hour * 60 + minuteOffset;
+  const maxStart = DAY_END_MINUTES - durationMinutes;
+  const startMinutes = clamp(snapToStep(rawStart), DAY_START_MINUTES, maxStart);
+  const endMinutes = startMinutes + durationMinutes;
+  const actualDate = addDays(weekStart, dayOfWeek);
+
+  return {
+    date: formatDateInput(actualDate),
+    dayOfWeek,
+    startMinutes,
+    endMinutes,
+  };
+}
+
 export default function TeamMeetingPlanner({
   members,
   availabilitySlots,
@@ -205,23 +228,18 @@ export default function TeamMeetingPlanner({
   );
 
   function updatePlacement(dayOfWeek: number, hour: number, clientY?: number, cellHeight = 60) {
-    const minuteOffset = clientY === undefined ? 0 : clamp(Math.floor((clientY / cellHeight) * 60), 0, 59);
-    const rawStart = hour * 60 + minuteOffset;
-    const maxStart = DAY_END_MINUTES - durationMinutes;
-    const startMinutes = clamp(snapToStep(rawStart), DAY_START_MINUTES, maxStart);
-    const endMinutes = startMinutes + durationMinutes;
-    const actualDate = addDays(weekStart, dayOfWeek);
-
-    const placement: PlacedMeeting = {
-      date: formatDateInput(actualDate),
+    const placement = buildPlacementFromPointer(
       dayOfWeek,
-      startMinutes,
-      endMinutes,
-    };
+      hour,
+      durationMinutes,
+      weekStart,
+      clientY,
+      cellHeight,
+    );
 
     setPlacedMeeting(placement);
-    setStartTime(`${String(Math.floor(startMinutes / 60)).padStart(2, "0")}:${String(startMinutes % 60).padStart(2, "0")}`);
-    setEndTime(`${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`);
+    setStartTime(`${String(Math.floor(placement.startMinutes / 60)).padStart(2, "0")}:${String(placement.startMinutes % 60).padStart(2, "0")}`);
+    setEndTime(`${String(Math.floor(placement.endMinutes / 60)).padStart(2, "0")}:${String(placement.endMinutes % 60).padStart(2, "0")}`);
   }
 
   async function handleCreateMeeting(event: FormEvent<HTMLFormElement>) {
@@ -624,13 +642,15 @@ export default function TeamMeetingPlanner({
                             if (!draggingBlock) return;
                             const rect = event.currentTarget.getBoundingClientRect();
                             const relativeY = event.clientY - rect.top;
-                            updatePlacement(day.index, hour, relativeY, rect.height || 56);
-                            setDragPreview({
-                              date: formatDateInput(addDays(weekStart, day.index)),
-                              dayOfWeek: day.index,
-                              startMinutes: placedMeeting?.startMinutes ?? dayStart,
-                              endMinutes: placedMeeting?.endMinutes ?? dayEnd,
-                            });
+                            const nextPreview = buildPlacementFromPointer(
+                              day.index,
+                              hour,
+                              durationMinutes,
+                              weekStart,
+                              relativeY,
+                              rect.height || 56,
+                            );
+                            setDragPreview(nextPreview);
                           }}
                           onDrop={(event) => {
                             event.preventDefault();
@@ -706,7 +726,10 @@ export default function TeamMeetingPlanner({
                                 height: `${Math.max(timeChunkHeight(dragPreview.startMinutes, dragPreview.endMinutes, hour), 18)}%`,
                               }}
                             >
-                              {title.trim() || "Meeting block"}
+                              <div className="truncate">{title.trim() || "Meeting block"}</div>
+                              <div className="text-[10px] opacity-85">
+                                {formatTimeLabel(dragPreview.startMinutes)} - {formatTimeLabel(dragPreview.endMinutes)}
+                              </div>
                             </div>
                           ) : null}
                         </div>

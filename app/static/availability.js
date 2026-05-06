@@ -80,11 +80,15 @@ function initAvailabilityCalendar() {
       const startMinutes = Number(cell.dataset.startMinutes || cell.getAttribute('data-start-minutes') || "0");
       const key = cellKey(dayOfWeek, startMinutes);
       const isSelected = cellSet.has(key);
+      const isBlocked = cell.classList.contains('group-meeting-slot-blocked');
 
       // support group-meeting-slot styling
       if (cell.classList.contains('group-meeting-slot')) {
-        cell.classList.toggle('group-meeting-slot-full', isSelected);
-        cell.classList.toggle('group-meeting-slot-none', !isSelected);
+        // Don't toggle blocked slots
+        if (!isBlocked) {
+          cell.classList.toggle('group-meeting-slot-full', isSelected);
+          cell.classList.toggle('group-meeting-slot-none', !isSelected);
+        }
       }
 
       // support original availability button styling
@@ -104,7 +108,7 @@ function initAvailabilityCalendar() {
     return element.closest("[data-availability-cell]");
   }
 
-  function applyRectangle(cellSet, startCell, endCell, mode) {
+  function applyRectangle(cellSet, startCell, endCell, mode, grid) {
     const startDay = Math.min(startCell.dayOfWeek, endCell.dayOfWeek);
     const endDay = Math.max(startCell.dayOfWeek, endCell.dayOfWeek);
     const startMinute = Math.min(startCell.startMinutes, endCell.startMinutes);
@@ -113,6 +117,15 @@ function initAvailabilityCalendar() {
     for (let dayOfWeek = startDay; dayOfWeek <= endDay; dayOfWeek += 1) {
       for (let minuteValue = startMinute; minuteValue < endMinute; minuteValue += 15) {
         const key = cellKey(dayOfWeek, minuteValue);
+        
+        // Check if this cell is blocked by a meeting
+        const cellElement = grid.querySelector(
+          `.group-meeting-slot[data-day-of-week="${dayOfWeek}"][data-start-minutes="${minuteValue}"]`
+        );
+        if (cellElement && cellElement.classList.contains('group-meeting-slot-blocked')) {
+          continue; // Skip blocked cells
+        }
+        
         if (mode === "erase") {
           cellSet.delete(key);
         } else {
@@ -165,7 +178,7 @@ function initAvailabilityCalendar() {
         return;
       }
       const mode = dragMode;
-      applyRectangle(cellSet, startCell, cell, mode);
+      applyRectangle(cellSet, startCell, cell, mode, grid);
       refreshGrid(root, cellSet);
     }
 
@@ -180,6 +193,11 @@ function initAvailabilityCalendar() {
         return;
       }
 
+      // Prevent selection if cell is blocked by a meeting
+      if (targetCell.classList.contains('group-meeting-slot-blocked')) {
+        return;
+      }
+
       event.preventDefault();
       activePointerId = event.pointerId;
       dragging = true;
@@ -190,7 +208,7 @@ function initAvailabilityCalendar() {
         startMinutes: Number(targetCell.dataset.startMinutes || targetCell.getAttribute('data-start-minutes') || "0"),
       };
       dragMode = cellSet.has(cellKey(startCell.dayOfWeek, startCell.startMinutes)) ? "erase" : "add";
-      applyRectangle(previewCells, startCell, startCell, dragMode);
+      applyRectangle(previewCells, startCell, startCell, dragMode, grid);
       refreshGrid(root, previewCells);
       grid.setPointerCapture(event.pointerId);
     });
@@ -208,7 +226,7 @@ function initAvailabilityCalendar() {
         startMinutes: Number(targetCell.dataset.startMinutes || targetCell.getAttribute('data-start-minutes') || "0"),
       };
       previewCells = new Set(baseCells);
-      applyRectangle(previewCells, startCell, currentCell, dragMode);
+      applyRectangle(previewCells, startCell, currentCell, dragMode, grid);
       refreshGrid(root, previewCells);
     });
 

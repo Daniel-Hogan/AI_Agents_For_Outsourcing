@@ -171,12 +171,37 @@
                         </div>
                       </form>
                     </details>
+                  {% endif %}
 
+                  {% if meeting['is_organizer'] %}
                     <form method="POST" action="{{ url_for('web_meetings_overview_cancel') }}">
                       <input type="hidden" name="meeting_id" value="{{ meeting['id'] }}" />
                       <input type="hidden" name="scope" value="{{ overview_scope }}" />
                       <button class="btn btn-soft btn-inline overview-cancel-button" type="submit">Cancel meeting</button>
                     </form>
+                  {% endif %}
+
+                  {% if meeting['current_user_status'] == 'invited' %}
+                    <div class="overview-rsvp-buttons">
+                      <form method="POST" action="{{ url_for('web_meetings_overview_rsvp') }}" style="display:inline;">
+                        <input type="hidden" name="meeting_id" value="{{ meeting['id'] }}" />
+                        <input type="hidden" name="status" value="accepted" />
+                        <input type="hidden" name="scope" value="{{ overview_scope }}" />
+                        <button class="btn btn-inline" style="background-color: rgba(34, 197, 94, 0.8); color: white; border: none;" type="submit">Accept</button>
+                      </form>
+                      <form method="POST" action="{{ url_for('web_meetings_overview_rsvp') }}" style="display:inline;">
+                        <input type="hidden" name="meeting_id" value="{{ meeting['id'] }}" />
+                        <input type="hidden" name="status" value="maybe" />
+                        <input type="hidden" name="scope" value="{{ overview_scope }}" />
+                        <button class="btn btn-inline" style="background-color: rgba(250, 204, 21, 0.8); color: white; border: none;" type="submit">Maybe</button>
+                      </form>
+                      <form method="POST" action="{{ url_for('web_meetings_overview_rsvp') }}" style="display:inline;">
+                        <input type="hidden" name="meeting_id" value="{{ meeting['id'] }}" />
+                        <input type="hidden" name="status" value="declined" />
+                        <input type="hidden" name="scope" value="{{ overview_scope }}" />
+                        <button class="btn btn-inline" style="background-color: rgba(239, 68, 68, 0.8); color: white; border: none;" type="submit">Decline</button>
+                      </form>
+                    </div>
                   {% endif %}
 
                   {% if meeting['can_add_people'] %}

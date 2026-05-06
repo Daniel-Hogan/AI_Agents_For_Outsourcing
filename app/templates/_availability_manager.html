@@ -25,13 +25,13 @@
         <div class="group-meeting-time-cell{% if not row['is_hour'] %} is-quarter{% endif %}">{{ row['label'] }}</div>
         {% for cell in row['cells'] %}
           <div
-            class="group-meeting-slot {% if cell['is_selected'] %}group-meeting-slot-full{% else %}group-meeting-slot-none{% endif %}"
+            class="group-meeting-slot {% if cell['is_blocked_by_meeting'] %}group-meeting-slot-blocked{% elif cell['is_selected'] %}group-meeting-slot-full{% else %}group-meeting-slot-none{% endif %}"
             data-group-meeting-slot
             data-day-of-week="{{ cell['day_of_week'] }}"
             data-start-minutes="{{ cell['start_minutes'] }}"
             data-end-minutes="{{ cell['end_minutes'] }}"
             data-unavailable-count="0"
-            aria-label="{{ day_short_names[cell['day_of_week']] }} {{ row['label'] or '' }}"
+            aria-label="{% if cell['is_blocked_by_meeting'] %}Blocked by meeting: {% endif %}{{ day_short_names[cell['day_of_week']] }} {{ row['label'] or '' }}"
           ></div>
         {% endfor %}
       {% endfor %}
@@ -39,7 +39,7 @@
     </div>
 
     <div class="availability-calendar-footer">
-      <span class="availability-field-help">Your painted blocks will save as 15-minute windows.</span>
+      <span class="availability-field-help">Your painted blocks will save as 15-minute windows. Blocked slots (diagonal stripes) cannot be selected.</span>
       <div class="availability-calendar-actions">
         <button type="button" class="btn btn-soft btn-inline" data-availability-clear>Clear selection</button>
         <button type="submit" class="btn btn-primary btn-inline" data-availability-save disabled>Saved</button>

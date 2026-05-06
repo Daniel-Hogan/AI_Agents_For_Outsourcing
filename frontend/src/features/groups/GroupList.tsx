@@ -25,11 +25,7 @@ export default function GroupList() {
         setGroups(data);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Could not connect to the backend server.';
-        if (message.toLowerCase().includes('unauthorized') || message.toLowerCase().includes('not authenticated')) {
-          localStorage.removeItem('access_token');
-          navigate('/login');
-          return;
-        }
+        // Avoid forcing logout on transient dev-reload/network errors.
         setError(message);
       } finally {
         setIsLoading(false);
