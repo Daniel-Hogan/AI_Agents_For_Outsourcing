@@ -252,3 +252,8 @@ def join_group(
 
 
 app = create_app()
+
+
+@app.get("/healthz", tags=["health"])
+def healthcheck():
+    return {"status": "ok"}
