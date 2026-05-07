@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Assistant</title>
+  {% include "_theme_head.html" %}
+</head>
+<body class="assistant-page">
+  {% include "_app_header.html" %}
+
+  <main class="assistant-page-shell app-page-shell">
+    {% if messages %}
+      <div class="toasts" aria-live="polite" aria-atomic="true">
+        {% for item in messages %}
+          <div class="toast toast-{{ item['category'] }}">{{ item["message"] }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <section class="assistant-page-hero">
+      <p class="section-kicker">AI Scheduling</p>
+      <h1>Tell Scheduler AI what you need.</h1>
+      <p>
+        Use natural language to draft meetings, update plans, and cancel events.
+        The assistant will always ask you to confirm before changing your calendar.
+      </p>
+    </section>
+
+    {% set assistant_chat_mode = "page" %}
+    {% include "_assistant_chat.html" %}
+  </main>
+</body>
+</html>

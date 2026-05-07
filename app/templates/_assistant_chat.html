@@ -1,0 +1,81 @@
+{% set assistant_chat_mode = assistant_chat_mode | default("drawer") %}
+{% set assistant_chat_is_page = assistant_chat_mode == "page" %}
+<div
+  class="assistant-chat assistant-chat-{{ assistant_chat_mode }}"
+  data-assistant-chat
+  data-assistant-chat-mode="{{ assistant_chat_mode }}"
+>
+  {% if not assistant_chat_is_page %}
+    <button
+      type="button"
+      class="assistant-chat-bubble"
+      data-assistant-open
+      aria-label="Open AI scheduling assistant"
+      aria-expanded="false"
+    >
+      <span class="assistant-chat-bubble-mark" aria-hidden="true">AI</span>
+      <span class="assistant-chat-bubble-copy">Schedule</span>
+    </button>
+    <div class="assistant-chat-scrim" data-assistant-scrim hidden></div>
+  {% endif %}
+
+  <section
+    class="assistant-chat-panel"
+    data-assistant-panel
+    role="{% if assistant_chat_is_page %}region{% else %}dialog{% endif %}"
+    aria-label="AI scheduling assistant"
+    {% if not assistant_chat_is_page %}aria-modal="false" aria-hidden="true" hidden{% else %}aria-hidden="false"{% endif %}
+  >
+    <header class="assistant-chat-header">
+      <div>
+        <p class="assistant-chat-kicker">Scheduler AI</p>
+        <h2>Meeting assistant</h2>
+        <p class="assistant-chat-subtitle">Ask me to schedule, update, or cancel meetings. I will draft first, then wait for your confirmation.</p>
+      </div>
+      <div class="assistant-chat-header-actions">
+        <button type="button" class="btn btn-soft btn-inline assistant-chat-new" data-assistant-new>New chat</button>
+        {% if not assistant_chat_is_page %}
+          <button type="button" class="assistant-chat-close" data-assistant-close aria-label="Close AI scheduling assistant">&times;</button>
+        {% endif %}
+      </div>
+    </header>
+
+    <div class="assistant-chat-status" data-assistant-status>Ready when you are.</div>
+
+    <div class="assistant-chat-messages" data-assistant-messages aria-live="polite" aria-relevant="additions"></div>
+
+    <section class="assistant-chat-candidates" data-assistant-candidates hidden>
+      <div class="assistant-chat-section-head">
+        <h3>Who did you mean?</h3>
+        <p>Select the right people, then send a short follow-up.</p>
+      </div>
+      <div class="assistant-chat-candidate-list" data-assistant-candidate-list></div>
+    </section>
+
+    <section class="assistant-chat-draft" data-assistant-draft hidden>
+      <div class="assistant-chat-section-head">
+        <h3>Draft ready</h3>
+        <p>Review this before anything is saved.</p>
+      </div>
+      <div class="assistant-chat-draft-card" data-assistant-draft-card></div>
+      <div class="assistant-chat-draft-actions">
+        <button type="button" class="btn btn-primary btn-inline" data-assistant-confirm>Confirm</button>
+        <button type="button" class="btn btn-soft btn-inline" data-assistant-discard>Discard</button>
+      </div>
+    </section>
+
+    <form class="assistant-chat-form" data-assistant-form>
+      <label class="assistant-chat-input-label" for="assistant-chat-input-{{ assistant_chat_mode }}">Message Scheduler AI</label>
+      <div class="assistant-chat-input-row">
+        <textarea
+          id="assistant-chat-input-{{ assistant_chat_mode }}"
+          data-assistant-input
+          rows="2"
+          maxlength="4000"
+          placeholder="Example: Schedule a meeting Monday at 7 PM with Ben and Alan"
+        ></textarea>
+        <button type="submit" class="btn btn-primary assistant-chat-send" data-assistant-send>Send</button>
+      </div>
+    </form>
+  </section>
+</div>

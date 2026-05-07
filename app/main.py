@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
 
+from app.api.assistant import router as assistant_router
 from app.api.auth import router as auth_router
 from app.api.availability import router as availability_router
 from app.api.calendar import router as calendar_router
@@ -114,6 +115,7 @@ def create_app() -> FastAPI:
 
     api.mount("/static", StaticFiles(directory="app/static"), name="static")
     api.include_router(web_router)
+    api.include_router(assistant_router)
     api.include_router(auth_router)
     api.include_router(recommendations_router)
     api.include_router(groups_router)

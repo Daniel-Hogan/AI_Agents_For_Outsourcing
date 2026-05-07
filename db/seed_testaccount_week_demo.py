@@ -26,6 +26,10 @@ GUEST_EMAIL = "testguest@stevens.edu"
 GUEST_PASSWORD = "testguest123"
 DEFAULT_INVITEE_PASSWORD = "stevensdemo123"
 DEFAULT_INVITEE_COUNT = 36
+DEMO_GROUP_NAME = "Scheduler AI Demo Group"
+DEMO_GROUP_DESCRIPTION = (
+    "Seeded group that lets the assistant find testguest and demo @stevens.edu invitees."
+)
 PRIMARY_SEED_MARKER = "[seed:testaccount-week-2026-04-20]"
 PRIMARY_RANDOM_SEED = 20260420
 PRIMARY_WEEK_START = datetime(2026, 4, 20, 0, 0, tzinfo=timezone.utc)
@@ -277,6 +281,34 @@ COLOR_PALETTE = [
 
 ATTENDEE_STATUS_CHOICES = ("invited", "accepted", "invited", "maybe", "declined")
 
+FIXED_INVITEE_PROFILES = [
+    {
+        "first_name": "Alex",
+        "last_name": "Mercer",
+        "email": "alex.mercer@stevens.edu",
+        "password": DEFAULT_INVITEE_PASSWORD,
+    },
+    {
+        "first_name": "Cameron",
+        "last_name": "Kim",
+        "email": "cameron.kim@stevens.edu",
+        "password": DEFAULT_INVITEE_PASSWORD,
+    },
+    {
+        "first_name": "Ben",
+        "last_name": "Rivera",
+        "email": "ben.rivera@stevens.edu",
+        "password": DEFAULT_INVITEE_PASSWORD,
+    },
+    {
+        "first_name": "Alan",
+        "last_name": "Patel",
+        "email": "alan.patel@stevens.edu",
+        "password": DEFAULT_INVITEE_PASSWORD,
+    },
+]
+RESERVED_DEMO_FIRST_NAMES = {profile["first_name"].lower() for profile in FIXED_INVITEE_PROFILES}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -362,13 +394,16 @@ def build_invitee_profiles(user_count: int) -> list[dict[str, str]]:
         raise ValueError("user_count must be at least 1")
 
     rng = random.Random(PRIMARY_RANDOM_SEED)
-    profiles: list[dict[str, str]] = []
-    used_emails = {PRIMARY_EMAIL, GUEST_EMAIL}
+    profiles: list[dict[str, str]] = [dict(profile) for profile in FIXED_INVITEE_PROFILES]
+    used_emails = {PRIMARY_EMAIL, GUEST_EMAIL, *(profile["email"] for profile in profiles)}
     suffix = 1
 
-    while len(profiles) < user_count:
+    target_count = max(user_count, len(FIXED_INVITEE_PROFILES))
+    while len(profiles) < target_count:
         first_name = rng.choice(FIRST_NAMES)
         last_name = rng.choice(LAST_NAMES)
+        if first_name.lower() in RESERVED_DEMO_FIRST_NAMES:
+            continue
         email = f"{first_name}.{last_name}{suffix:02d}@stevens.edu".lower()
         suffix += 1
 
@@ -386,6 +421,70 @@ def build_invitee_profiles(user_count: int) -> list[dict[str, str]]:
         )
 
     return profiles
+
+
+def format_group_token(group_id: int) -> str:
+    return f"{group_id:09d}"
+
+
+def ensure_demo_group(db, *, primary_user: User, guest_user: User, invitees: list[User]) -> int:
+    group_id = db.execute(
+        text(
+            """
+            SELECT id
+            FROM groups
+            WHERE name = :name
+            ORDER BY id
+            LIMIT 1
+            """
+        ),
+        {"name": DEMO_GROUP_NAME},
+    ).scalar_one_or_none()
+
+    if group_id is None:
+        group_id = int(
+            db.execute(
+                text(
+                    """
+                    INSERT INTO groups (name, description)
+                    VALUES (:name, :description)
+                    RETURNING id
+                    """
+                ),
+                {"name": DEMO_GROUP_NAME, "description": DEMO_GROUP_DESCRIPTION},
+            ).scalar_one()
+        )
+    else:
+        group_id = int(group_id)
+        db.execute(
+            text(
+                """
+                UPDATE groups
+                SET description = :description
+                WHERE id = :group_id
+                """
+            ),
+            {"group_id": group_id, "description": DEMO_GROUP_DESCRIPTION},
+        )
+
+    member_roles: list[tuple[int, str]] = [
+        (primary_user.id, "owner"),
+        (guest_user.id, "admin"),
+        *[(invitee.id, "member") for invitee in invitees],
+    ]
+    for user_id, role in member_roles:
+        db.execute(
+            text(
+                """
+                INSERT INTO group_memberships (user_id, group_id, role)
+                VALUES (:user_id, :group_id, :role)
+                ON CONFLICT (user_id, group_id) DO UPDATE SET role = EXCLUDED.role
+                """
+            ),
+            {"user_id": user_id, "group_id": group_id, "role": role},
+        )
+
+    return group_id
 
 
 def reset_seeded_week_meetings(
@@ -620,6 +719,12 @@ def main() -> None:
             )
             for profile in invitee_profiles
         ]
+        demo_group_id = ensure_demo_group(
+            db,
+            primary_user=primary_user,
+            guest_user=guest_user,
+            invitees=invitees,
+        )
 
         invitee_ids = [invitee.id for invitee in invitees]
         seed_week_for_user(
@@ -652,6 +757,8 @@ def main() -> None:
         print(f"Guest password: {GUEST_PASSWORD}")
         print(f"Generated inviteable @stevens.edu users: {len(invitees)}")
         print(f"Invitee password: {DEFAULT_INVITEE_PASSWORD}")
+        print(f"Shared assistant group: {DEMO_GROUP_NAME}")
+        print(f"Shared assistant group token: {format_group_token(demo_group_id)}")
         print("Primary week seeded: 2026-04-20 through 2026-04-25")
         print("Guest week seeded: 2026-05-18 through 2026-05-22")
         print("Sample invitees:")

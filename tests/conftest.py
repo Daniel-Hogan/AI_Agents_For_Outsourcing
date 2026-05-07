@@ -29,6 +29,8 @@ def _truncate_all_tables() -> None:
             text(
                 """
                 TRUNCATE TABLE
+                    assistant_draft_actions,
+                    assistant_threads,
                     notifications,
                     notification_preferences,
                     meeting_attendees,

@@ -1880,6 +1880,21 @@ def _render_settings_page(
     )
 
 
+def _render_assistant_page(
+    request: Request,
+    *,
+    user: User,
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="assistant.html",
+        context={
+            **_app_shell_context(user, active_page="assistant"),
+            "messages": _pop_flashes(request),
+        },
+    )
+
+
 def _render_groups_page(
     request: Request,
     *,
@@ -2142,6 +2157,15 @@ def calendar_page(request: Request, db: Session = Depends(get_db), month: str = 
         _push_flash(request, "error", "Please sign in first.")
         return RedirectResponse(url="/", status_code=303)
     return _render_calendar_page(request, db=db, user=user, selected_month=month.strip())
+
+
+@router.get("/assistant", name="web_assistant")
+def assistant_page(request: Request, db: Session = Depends(get_db)):
+    user = _current_user(request, db)
+    if user is None:
+        _push_flash(request, "error", "Please sign in first.")
+        return RedirectResponse(url="/", status_code=303)
+    return _render_assistant_page(request, user=user)
 
 
 @router.post("/calendar/meetings/update", name="web_calendar_meeting_update")

@@ -79,8 +79,13 @@
       <a class="app-header-nav-link{% if active_page == 'calendar' %} is-active{% endif %}" href="{{ url_for('web_calendar') }}">Calendar</a>
       <a class="app-header-nav-link{% if active_page == 'availability' %} is-active{% endif %}" href="{{ url_for('web_availability') }}">Availability</a>
       <a class="app-header-nav-link{% if active_page == 'groups' %} is-active{% endif %}" href="{{ url_for('web_groups') }}">Groups</a>
+      <a class="app-header-nav-link{% if active_page == 'assistant' %} is-active{% endif %}" href="{{ url_for('web_assistant') }}">AI Assistant</a>
       <a class="app-header-nav-link{% if active_page == 'settings' %} is-active{% endif %}" href="{{ url_for('web_settings') }}">Settings</a>
     </nav>
 
   </div>
 </header>
+{% if active_page != 'assistant' %}
+  {% set assistant_chat_mode = "drawer" %}
+  {% include "_assistant_chat.html" %}
+{% endif %}
