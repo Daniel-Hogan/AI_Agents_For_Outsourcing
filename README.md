@@ -10,6 +10,8 @@ This repo currently includes:
 The active UI is the FastAPI/Jinja application served by `uvicorn` on port `8000`.
 The old React/Vite and Flask prototype UIs have been removed from this branch.
 
+Deployment instructions for DigitalOcean live hosting are in [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## Local Setup
 
 1) Start Postgres
@@ -34,6 +36,12 @@ The old React/Vite and Flask prototype UIs have been removed from this branch.
 
 API docs: `http://127.0.0.1:8000/docs`
 Web login page: `http://127.0.0.1:8000/`
+
+## Tests And Database Safety
+
+The pytest suite intentionally truncates its database between tests. To protect real user data, tests use `TEST_DATABASE_URL` when set, or automatically derive a database ending in `_test` from `DATABASE_URL` such as `appdb_test`.
+
+The test cleanup code refuses to truncate any database whose name does not end in `_test`. Do not point `TEST_DATABASE_URL` at a development or production database.
 
 ## Production Notes
 
