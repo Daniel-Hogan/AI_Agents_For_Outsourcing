@@ -66,6 +66,7 @@
         </a>
 
         <form method="POST" action="{{ url_for('web_logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
           <button class="btn btn-primary btn-inline" type="submit">Log out</button>
         </form>
       </div>

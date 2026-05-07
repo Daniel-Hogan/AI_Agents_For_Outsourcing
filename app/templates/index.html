@@ -61,6 +61,7 @@
       </div>
 
       <form class="email-row" method="POST" action="{{ url_for('web_login') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
         <div class="input-wrap">
           <input type="email" name="email" placeholder="name@company.com" required />
         </div>

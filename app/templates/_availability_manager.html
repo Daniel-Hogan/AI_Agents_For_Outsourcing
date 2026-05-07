@@ -1,4 +1,5 @@
 <form method="POST" action="{{ url_for('web_availability_add') }}" class="availability-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
   <input type="hidden" name="next" value="{{ availability_next }}" />
 
   <div class="availability-form-grid">
@@ -110,6 +111,7 @@
               <td>{{ pref["end_time"] }}</td>
               <td>
                 <form method="POST" action="{{ url_for('web_availability_delete') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
                   <input type="hidden" name="preference_id" value="{{ pref['id'] }}" />
                   <input type="hidden" name="next" value="{{ availability_next }}" />
                   <button class="btn btn-soft btn-inline availability-delete-btn" type="submit">Delete</button>

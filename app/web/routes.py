@@ -1,5 +1,7 @@
 import calendar as month_calendar
+import hmac
 import re
+import secrets
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
@@ -17,6 +19,7 @@ from app.api.meetings import update_meeting as api_update_meeting
 from app.api.recommendations import generate_meeting_time_recommendations
 from app.api.deps import get_db
 from app.core.avatar import AVATAR_COLOR_OPTIONS, avatar_color_hex, normalize_avatar_color_id
+from app.core.config import settings
 from app.core.security import hash_password, verify_password
 from app.models import PasswordCredential, User
 from app.schemas.auth import RegisterRequest, UpdateProfileRequest
@@ -33,8 +36,35 @@ from app.services.notifications import (
 from app.services.travel import autocomplete_locations, get_travel_warning_service
 
 
-router = APIRouter(tags=["web"])
+CSRF_SESSION_KEY = "_csrf_token"
+
+
+def csrf_token(request: Request) -> str:
+    token = request.session.get(CSRF_SESSION_KEY)
+    if not isinstance(token, str) or not token:
+        token = secrets.token_urlsafe(32)
+        request.session[CSRF_SESSION_KEY] = token
+    return token
+
+
+async def validate_web_csrf(request: Request) -> None:
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return
+    if not settings.csrf_protection_enabled:
+        return
+
+    expected = request.session.get(CSRF_SESSION_KEY)
+    form = await request.form()
+    submitted = form.get("csrf_token")
+    if not isinstance(expected, str) or not isinstance(submitted, str):
+        raise HTTPException(status_code=403, detail="Invalid CSRF token")
+    if not hmac.compare_digest(expected, submitted):
+        raise HTTPException(status_code=403, detail="Invalid CSRF token")
+
+
+router = APIRouter(tags=["web"], dependencies=[Depends(validate_web_csrf)])
 templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["csrf_token"] = csrf_token
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 DAY_OPTIONS = [
     (0, "Sunday"),
@@ -680,6 +710,14 @@ def _frequent_invitee_suggestions(db: Session, *, current_user_id: int, limit: i
               AND u.id <> :current_user_id
               AND u.is_active = true
               AND ma.status IN ('invited', 'accepted')
+              AND EXISTS (
+                  SELECT 1
+                  FROM group_memberships current_gm
+                  JOIN group_memberships candidate_gm
+                    ON candidate_gm.group_id = current_gm.group_id
+                   AND candidate_gm.user_id = u.id
+                  WHERE current_gm.user_id = :current_user_id
+              )
             GROUP BY u.id, u.first_name, u.last_name, u.email
             ORDER BY COUNT(*) DESC, MAX(m.start_time) DESC, u.email ASC
             LIMIT :limit
@@ -738,6 +776,14 @@ def _matching_invitee_suggestions(
             LEFT JOIN invite_history ON invite_history.user_id = u.id
             WHERE u.is_active = true
               AND u.id <> :current_user_id
+              AND EXISTS (
+                  SELECT 1
+                  FROM group_memberships current_gm
+                  JOIN group_memberships candidate_gm
+                    ON candidate_gm.group_id = current_gm.group_id
+                   AND candidate_gm.user_id = u.id
+                  WHERE current_gm.user_id = :current_user_id
+              )
               AND (
                   LOWER(u.email) LIKE :contains
                   OR LOWER(split_part(u.email, '@', 1)) LIKE :contains
@@ -3536,9 +3582,19 @@ def meeting_detail(meeting_id: int, request: Request, db: Session = Depends(get_
             JOIN calendars c ON c.id = m.calendar_id
             LEFT JOIN users u ON c.owner_type = 'user' AND c.owner_id = u.id
             WHERE m.id = :meeting_id
+              AND (
+                  m.created_by = :current_user_id
+                  OR (c.owner_type = 'user' AND c.owner_id = :current_user_id)
+                  OR EXISTS (
+                      SELECT 1
+                      FROM meeting_attendees ma_access
+                      WHERE ma_access.meeting_id = m.id
+                        AND ma_access.user_id = :current_user_id
+                  )
+              )
             """
         ),
-        {"meeting_id": meeting_id},
+        {"meeting_id": meeting_id, "current_user_id": user.id},
     ).mappings().one_or_none()
 
     if row is None:

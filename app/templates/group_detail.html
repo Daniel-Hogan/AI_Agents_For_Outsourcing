@@ -63,6 +63,7 @@
             </div>
 
             <form method="POST" action="{{ url_for('web_groups_invite', group_id=group['id']) }}" class="settings-form-stack">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
               <input type="hidden" name="month" value="{{ group_calendar_view['selected_month'] }}" />
               {% if selected_member %}
                 <input type="hidden" name="member_id" value="{{ selected_member['id'] }}" />
@@ -135,6 +136,7 @@
                   <div class="group-roster-actions">
                     {% if member['role'] != 'owner' and member['id'] != group_membership['user_id'] %}
                       <form method="POST" action="{{ url_for('web_groups_update_member_role', group_id=group['id'], target_user_id=member['id']) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
                         <input type="hidden" name="month" value="{{ group_calendar_view['selected_month'] }}" />
                         {% if selected_member %}
                           <input type="hidden" name="member_id" value="{{ selected_member['id'] }}" />
@@ -146,6 +148,7 @@
                       </form>
 
                       <form method="POST" action="{{ url_for('web_groups_remove_member', group_id=group['id'], target_user_id=member['id']) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
                         <input type="hidden" name="month" value="{{ group_calendar_view['selected_month'] }}" />
                         {% if selected_member %}
                           <input type="hidden" name="member_id" value="{{ selected_member['id'] }}" />

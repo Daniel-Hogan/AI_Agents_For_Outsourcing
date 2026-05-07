@@ -279,6 +279,7 @@
         <button type="button" class="btn btn-soft btn-inline" data-calendar-edit-toggle hidden>Edit meeting</button>
         <a class="btn btn-primary btn-inline-wide" data-calendar-modal-link href="#">Open details</a>
         <form method="POST" action="{{ url_for('web_meetings_overview_cancel') }}" data-calendar-cancel-form style="display:none;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
           <input type="hidden" name="meeting_id" data-calendar-cancel-meeting-id />
           <input type="hidden" name="scope" value="mine" />
           <button class="btn btn-soft btn-inline overview-cancel-button" type="submit" onclick="return confirm('Are you sure you want to cancel this meeting?')">Cancel meeting</button>
@@ -286,6 +287,7 @@
       </div>
 
       <form method="POST" action="{{ url_for('web_calendar_meeting_update') }}" class="calendar-modal-edit-form" data-calendar-edit-form hidden>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
         <input type="hidden" name="meeting_id" data-calendar-edit-meeting-id />
         <input type="hidden" name="month" value="{{ calendar_view['selected_month'] }}" />
 

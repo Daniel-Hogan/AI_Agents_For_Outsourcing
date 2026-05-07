@@ -5,7 +5,10 @@ This repo currently includes:
 - Postgres via `docker-compose.yml`
 - Database schema in `db/schema.sql`
 - FastAPI backend (authentication + authorization helpers) under `app/`
-- Server-rendered web pages (merged from `LoginPage`) served by FastAPI at `/`
+- Server-rendered web pages served by FastAPI at `/`
+
+The active UI is the FastAPI/Jinja application served by `uvicorn` on port `8000`.
+The old React/Vite and Flask prototype UIs have been removed from this branch.
 
 ## Local Setup
 
@@ -31,6 +34,18 @@ This repo currently includes:
 
 API docs: `http://127.0.0.1:8000/docs`
 Web login page: `http://127.0.0.1:8000/`
+
+## Production Notes
+
+For a public deployment, set:
+
+- `APP_ENV=production`
+- a strong `JWT_SECRET` of at least 32 characters
+- `COOKIE_SECURE=true`
+- `CSRF_PROTECTION_ENABLED=true`
+- `APP_BASE_URL` to the public HTTPS URL
+
+The app refuses to start in production if these safety settings are missing or still set to local-development defaults.
 
 ## Travel-Time Warnings
 

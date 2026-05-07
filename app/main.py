@@ -35,18 +35,23 @@ logger = logging.getLogger("app")
 
 
 def _allowed_origins() -> list[str]:
-    origins = {
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-    }
+    origins: set[str] = set()
+    if not settings.is_production:
+        origins.update(
+            {
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+                "http://localhost:5174",
+                "http://127.0.0.1:5174",
+            }
+        )
     if settings.frontend_origin:
         origins.add(settings.frontend_origin)
     return sorted(origins)
 
 
 def create_app() -> FastAPI:
+    settings.validate_runtime()
     api = FastAPI(title="AI Agents API")
 
     @api.on_event("startup")
