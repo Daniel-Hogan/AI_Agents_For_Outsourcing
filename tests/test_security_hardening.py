@@ -101,3 +101,13 @@ def test_production_runtime_rejects_unsafe_defaults(monkeypatch):
     assert "COOKIE_SECURE" in message
     assert "CSRF_PROTECTION_ENABLED" in message
     assert "localhost" in message
+
+
+def test_staging_runtime_allows_local_prod_like_ui_without_strict_security(monkeypatch):
+    monkeypatch.setattr(settings, "app_env", "staging")
+    monkeypatch.setattr(settings, "jwt_secret", "dev-change-me")
+    monkeypatch.setattr(settings, "cookie_secure", False)
+    monkeypatch.setattr(settings, "csrf_protection_enabled", False)
+    monkeypatch.setattr(settings, "frontend_origin", "http://localhost:5173")
+
+    create_app()

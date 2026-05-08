@@ -26,7 +26,7 @@ Deployment instructions for DigitalOcean live hosting are in [DEPLOYMENT.md](DEP
 
 - Copy `.env.example` to `.env`
 - Fill in `JWT_SECRET`
-- (Optional) Fill in `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for Google login
+- (Optional, development only) Fill in `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to make the local Google login button complete the OAuth flow
 - (Optional) Fill in `OPENROUTESERVICE_API_KEY` to enable meeting travel-time warnings
 - (Optional) Fill in `ORGANIZATION_DEFAULT_LOCATION` and coordinates for the final travel-origin fallback
 
@@ -55,6 +55,15 @@ For a public deployment, set:
 
 The app refuses to start in production if these safety settings are missing or still set to local-development defaults.
 
+For local production-like UI testing, use `APP_ENV=staging`. Staging hides development-only Google/Microsoft login buttons like production, but it does not enforce production-only security settings such as `COOKIE_SECURE=true` or `CSRF_PROTECTION_ENABLED=true`.
+
+PowerShell example:
+
+```powershell
+$env:APP_ENV="staging"
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
+
 ## Travel-Time Warnings
 
 The meetings page can now evaluate travel feasibility between meetings using `openrouteservice` routing and OpenStreetMap-based geocoding.
@@ -82,6 +91,25 @@ If the ORS provider is unavailable or a meeting location cannot be resolved, the
 - `GET /auth/me`
 - `POST /auth/google/exchange`
 - `POST /auth/link/google`
+
+## Future Optional Google Login
+
+Google login is identity-only. It requests `openid email profile` and does not request Google Calendar access. The backend and web OAuth callback code are present, but the production UI currently hides Google login because the Google Cloud Console OAuth setup has not been completed and approved for the deployed app.
+
+In development, the Google and Microsoft buttons appear on the login page. Google redirects into the OAuth flow only when both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set; otherwise it shows a configuration message. Microsoft remains a local stub. In production, the visible login UI is email/password only.
+
+In Google Cloud Console:
+
+- Create or select a project.
+- Configure the OAuth consent screen.
+- Create an OAuth 2.0 Client ID for a Web application.
+- Add authorized redirect URIs:
+  - `http://127.0.0.1:8000/web/auth/google/callback`
+  - `https://schedulerai.tech/web/auth/google/callback`
+- Copy the client ID and client secret into `.env` as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+- Set `APP_BASE_URL=http://127.0.0.1:8000` locally and `APP_BASE_URL=https://schedulerai.tech` in production.
+
+When a verified Google email matches an existing password account, the app links that Google identity automatically and signs the user in.
 
 ## Recommendation Endpoint
 
@@ -120,4 +148,4 @@ py -3.14 db/seed_recommendation_demo.py
 
 - Refresh token is stored in an `HttpOnly` cookie (path `/auth`).
 - Access token is returned in JSON and should be sent as `Authorization: Bearer <token>`.
-- Google auth has not yet been tested.
+- Google login requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and a redirect URI that exactly matches Google Cloud Console.

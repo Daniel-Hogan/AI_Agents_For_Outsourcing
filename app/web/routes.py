@@ -9,12 +9,12 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select, text
+from sqlalchemy import bindparam, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from pydantic import ValidationError
 
-from app.api.auth import create_password_user_account
+from app.api.auth import authenticate_google_code, create_password_user_account
 from app.api.meetings import update_meeting as api_update_meeting
 from app.api.recommendations import generate_meeting_time_recommendations
 from app.api.deps import get_db
@@ -37,6 +37,7 @@ from app.services.travel import autocomplete_locations, get_travel_warning_servi
 
 
 CSRF_SESSION_KEY = "_csrf_token"
+GOOGLE_OAUTH_STATE_SESSION_KEY = "_google_oauth_state"
 
 
 def csrf_token(request: Request) -> str:
@@ -98,6 +99,42 @@ def _pop_flashes(request: Request) -> list[dict[str, str]]:
     flashes = request.session.get("_flashes", [])
     request.session["_flashes"] = []
     return flashes
+
+
+def _app_base_url(request: Request) -> str:
+    configured = (settings.app_base_url or "").strip().rstrip("/")
+    if configured:
+        if configured.startswith(("http://", "https://")):
+            return configured
+        return f"https://{configured}"
+    return str(request.base_url).rstrip("/")
+
+
+def _google_redirect_uri(request: Request) -> str:
+    return f"{_app_base_url(request)}/web/auth/google/callback"
+
+
+def _google_authorization_url(*, state: str, redirect_uri: str) -> str:
+    query = urlencode(
+        {
+            "client_id": settings.google_client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "state": state,
+            "access_type": "online",
+            "prompt": "select_account",
+        }
+    )
+    return f"https://accounts.google.com/o/oauth2/v2/auth?{query}"
+
+
+def _show_google_oauth_ui() -> bool:
+    return not settings.is_deployed_like
+
+
+def _show_microsoft_oauth_ui() -> bool:
+    return not settings.is_deployed_like
 
 
 def _current_user(request: Request, db: Session) -> User | None:
@@ -269,7 +306,15 @@ def _get_or_create_personal_calendar(db: Session, user: User) -> int:
     )
 
 
-def _list_meetings(db: Session, *, user: User, q: str, status: str, mine: bool):
+def _list_meetings(
+    db: Session,
+    *,
+    user: User,
+    q: str,
+    status: str,
+    mine: bool,
+    attendee_statuses: tuple[str, ...] = ("invited", "accepted", "maybe"),
+):
     sql = """
         SELECT
             m.id,
@@ -304,15 +349,26 @@ def _list_meetings(db: Session, *, user: User, q: str, status: str, mine: bool):
                     FROM meeting_attendees own_ma
                     WHERE own_ma.meeting_id = m.id
                       AND own_ma.user_id = :current_user_id
-                      AND own_ma.status IN ('invited', 'accepted')
+                      AND own_ma.status IN :attendee_statuses
                 )
             ) AS is_relevant_to_user
         FROM meetings m
         JOIN calendars c ON c.id = m.calendar_id
         LEFT JOIN users u ON c.owner_type = 'user' AND c.owner_id = u.id
-        WHERE 1=1
+        WHERE COALESCE(m.status, 'confirmed') <> 'cancelled'
+          AND (
+            m.created_by = :current_user_id
+            OR (c.owner_type = 'user' AND c.owner_id = :current_user_id)
+            OR EXISTS (
+                SELECT 1
+                FROM meeting_attendees visible_ma
+                WHERE visible_ma.meeting_id = m.id
+                  AND visible_ma.user_id = :current_user_id
+                  AND visible_ma.status IN :attendee_statuses
+            )
+          )
     """
-    params: dict[str, object] = {"current_user_id": user.id}
+    params: dict[str, object] = {"current_user_id": user.id, "attendee_statuses": attendee_statuses}
 
     if q:
         sql += " AND (m.title ILIKE :q OR COALESCE(m.location, '') ILIKE :q OR COALESCE(u.email, '') ILIKE :q)"
@@ -329,7 +385,8 @@ def _list_meetings(db: Session, *, user: User, q: str, status: str, mine: bool):
         params["email"] = user.email
 
     sql += " ORDER BY m.start_time ASC"
-    return db.execute(text(sql), params).mappings().all()
+    query = text(sql).bindparams(bindparam("attendee_statuses", expanding=True))
+    return db.execute(query, params).mappings().all()
 
 
 def _coerce_datetime_value(value: Any) -> datetime | None:
@@ -574,22 +631,27 @@ def _build_calendar_context(meetings: list[dict[str, Any]], *, selected_month_ra
         day_items.sort(key=lambda item: item["start_dt"] or datetime.max.replace(tzinfo=timezone.utc))
 
     weeks: list[list[dict[str, Any]]] = []
+    month_days: list[dict[str, Any]] = []
     for week in month_grid:
         week_cells: list[dict[str, Any]] = []
         for day_value in week:
             day_iso = day_value.isoformat()
             day_meetings = meetings_by_day.get(day_iso, [])
-            week_cells.append(
-                {
-                    "date_iso": day_iso,
-                    "day_number": day_value.day,
-                    "is_current_month": day_value.month == month_start.month,
-                    "is_today": day_value == today,
-                    "meetings": day_meetings[:3],
-                    "meeting_count": len(day_meetings),
-                    "more_count": max(0, len(day_meetings) - 3),
-                }
-            )
+            is_current_month = day_value.month == month_start.month
+            day_context = {
+                "date_iso": day_iso,
+                "day_number": day_value.day,
+                "weekday_short": day_value.strftime("%a"),
+                "is_current_month": is_current_month,
+                "is_today": day_value == today,
+                "meetings": day_meetings[:3],
+                "all_meetings": day_meetings,
+                "meeting_count": len(day_meetings),
+                "more_count": max(0, len(day_meetings) - 3),
+            }
+            week_cells.append(day_context)
+            if is_current_month:
+                month_days.append(day_context)
         weeks.append(week_cells)
 
     grouped_meetings = [
@@ -603,6 +665,7 @@ def _build_calendar_context(meetings: list[dict[str, Any]], *, selected_month_ra
         "month_label": month_start.strftime("%B %Y"),
         "meeting_count_label": _pluralize(month_meeting_count, "meeting"),
         "weeks": weeks,
+        "month_days": month_days,
         "grouped_meetings": grouped_meetings,
         "is_empty": month_meeting_count == 0,
         "prev_query": urlencode({"month": _shift_month(month_start, -1).strftime("%Y-%m")}),
@@ -623,8 +686,23 @@ def _format_travel_warning_flash(warning: dict[str, Any]) -> str:
     return detail
 
 
-def _load_meetings_with_travel_context(db: Session, *, user: User, q: str, status: str, mine: bool) -> list[dict[str, Any]]:
-    rows = _list_meetings(db, user=user, q=q, status=status, mine=mine)
+def _load_meetings_with_travel_context(
+    db: Session,
+    *,
+    user: User,
+    q: str,
+    status: str,
+    mine: bool,
+    attendee_statuses: tuple[str, ...] = ("invited", "accepted", "maybe"),
+) -> list[dict[str, Any]]:
+    rows = _list_meetings(
+        db,
+        user=user,
+        q=q,
+        status=status,
+        mine=mine,
+        attendee_statuses=attendee_statuses,
+    )
     fallback_rows: list[dict[str, Any]] = []
     for row in rows:
         meeting = dict(row)
@@ -1887,7 +1965,14 @@ def _render_calendar_page(
     user: User,
     selected_month: str = "",
 ):
-    meetings = _load_meetings_with_travel_context(db, user=user, q="", status="", mine=False)
+    meetings = _load_meetings_with_travel_context(
+        db,
+        user=user,
+        q="",
+        status="",
+        mine=False,
+        attendee_statuses=("accepted", "maybe"),
+    )
     return templates.TemplateResponse(
         request=request,
         name="calendar.html",
@@ -2013,7 +2098,11 @@ def index(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"messages": _pop_flashes(request)},
+        context={
+            "messages": _pop_flashes(request),
+            "show_google_oauth": _show_google_oauth_ui(),
+            "show_microsoft_oauth": _show_microsoft_oauth_ui(),
+        },
     )
 
 
@@ -3692,8 +3781,49 @@ def logout(request: Request):
 
 @router.get("/web/auth/google", name="web_auth_google")
 def auth_google(request: Request):
-    _push_flash(request, "error", "Google OAuth UI flow is not wired in this page yet.")
-    return RedirectResponse(url="/", status_code=303)
+    if not settings.google_client_id or not settings.google_client_secret:
+        _push_flash(request, "error", "Google login is not configured yet.")
+        return RedirectResponse(url="/", status_code=303)
+
+    state = secrets.token_urlsafe(32)
+    request.session[GOOGLE_OAUTH_STATE_SESSION_KEY] = state
+    return RedirectResponse(
+        url=_google_authorization_url(state=state, redirect_uri=_google_redirect_uri(request)),
+        status_code=303,
+    )
+
+
+@router.get("/web/auth/google/callback", name="web_auth_google_callback")
+def auth_google_callback(
+    request: Request,
+    code: str = "",
+    state: str = "",
+    error: str = "",
+    db: Session = Depends(get_db),
+):
+    expected_state = request.session.pop(GOOGLE_OAUTH_STATE_SESSION_KEY, None)
+    if error:
+        _push_flash(request, "error", "Google sign-in was cancelled.")
+        return RedirectResponse(url="/", status_code=303)
+
+    if not code or not state or not isinstance(expected_state, str) or not hmac.compare_digest(expected_state, state):
+        _push_flash(request, "error", "Google sign-in could not be verified. Please try again.")
+        return RedirectResponse(url="/", status_code=303)
+
+    try:
+        user = authenticate_google_code(
+            db,
+            code=code,
+            code_verifier=None,
+            redirect_uri=_google_redirect_uri(request),
+        )
+    except HTTPException as exc:
+        _push_flash(request, "error", str(exc.detail))
+        return RedirectResponse(url="/", status_code=303)
+
+    request.session["user_id"] = user.id
+    _push_flash(request, "success", f"Signed in as {user.email}")
+    return RedirectResponse(url="/meetings", status_code=303)
 
 
 @router.get("/web/auth/microsoft", name="web_auth_microsoft")

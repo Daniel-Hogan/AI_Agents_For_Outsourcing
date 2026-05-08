@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.app_env.strip().lower() in {"prod", "production"}
 
+    @property
+    def is_deployed_like(self) -> bool:
+        return self.app_env.strip().lower() in {"prod", "production", "stage", "staging"}
+
     def validate_runtime(self) -> None:
         if not self.is_production:
             return
