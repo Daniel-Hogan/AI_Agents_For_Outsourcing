@@ -5,6 +5,7 @@ import logging
 import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -31,6 +32,7 @@ from app.services.recommendations import recommend_common_slots
 logger = logging.getLogger("app.assistant")
 
 MAX_STORED_MESSAGES = 80
+APP_LOCAL_TIMEZONE = ZoneInfo("America/New_York")
 
 
 ASSISTANT_TOOLS: list[dict[str, Any]] = [
@@ -693,13 +695,28 @@ def _draft_summary(draft: AssistantDraftAction) -> str:
     if draft.action_type == "create_meeting":
         attendees = payload.get("attendee_emails") or []
         attendee_copy = f" with {', '.join(attendees)}" if attendees else ""
+        start_copy = _format_assistant_datetime(payload.get("start_time"))
+        end_copy = _format_assistant_datetime(payload.get("end_time"))
         return (
             f"I drafted {payload.get('title', 'the meeting')}{attendee_copy} from "
-            f"{payload.get('start_time')} to {payload.get('end_time')}. Confirm it when you are ready."
+            f"{start_copy} to {end_copy}. Confirm it when you are ready."
         )
     if draft.action_type == "update_meeting":
         return f"I drafted updates for meeting #{draft.target_meeting_id}. Confirm to apply them."
     return f"I drafted a cancellation for meeting #{draft.target_meeting_id}. Confirm to cancel it."
+
+
+def _format_assistant_datetime(value: Any) -> str:
+    if not value:
+        return "the selected time"
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return str(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    local_value = parsed.astimezone(APP_LOCAL_TIMEZONE)
+    return f"{local_value:%b} {local_value.day}, {local_value.year} at {local_value.strftime('%I:%M %p').lstrip('0')}"
 
 
 def _normalize_draft_payload(
@@ -1050,7 +1067,7 @@ def _parse_time_parts(message: str) -> tuple[int, int] | None:
 
 
 def _future_date_for_month_day(month: int, day: int, year: int | None = None) -> date:
-    today = _utc_now().date()
+    today = _utc_now().astimezone(APP_LOCAL_TIMEZONE).date()
     resolved_year = year or today.year
     resolved = date(resolved_year, month, day)
     if year is None and resolved < today:
@@ -1059,7 +1076,7 @@ def _future_date_for_month_day(month: int, day: int, year: int | None = None) ->
 
 
 def _future_date_for_day_number(day: int, year: int | None = None) -> date:
-    today = _utc_now().date()
+    today = _utc_now().astimezone(APP_LOCAL_TIMEZONE).date()
     resolved_year = year or today.year
     resolved_month = today.month
     resolved = date(resolved_year, resolved_month, day)
@@ -1074,7 +1091,7 @@ def _future_date_for_day_number(day: int, year: int | None = None) -> date:
 
 
 def _future_date_for_weekday(weekday_name: str) -> date:
-    today = _utc_now().date()
+    today = _utc_now().astimezone(APP_LOCAL_TIMEZONE).date()
     target_index = WEEKDAY_INDEXES[weekday_name.lower()]
     days_ahead = (target_index - today.weekday()) % 7
     if days_ahead == 0:
@@ -1082,13 +1099,31 @@ def _future_date_for_weekday(weekday_name: str) -> date:
     return today + timedelta(days=days_ahead)
 
 
+def _local_datetime_to_utc(resolved: date, hour: int, minute: int, second: int = 0) -> datetime:
+    local_value = datetime(resolved.year, resolved.month, resolved.day, hour, minute, second, tzinfo=APP_LOCAL_TIMEZONE)
+    return local_value.astimezone(timezone.utc)
+
+
 def _parse_start_time(message: str) -> datetime | None:
-    iso_match = re.search(r"(\d{4}-\d{2}-\d{2})(?:[ T](\d{1,2}):(\d{2}))?", message)
+    iso_match = re.search(
+        r"\b(\d{4}-\d{2}-\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(Z|[+-]\d{2}:?\d{2})?)?\b",
+        message,
+    )
     if iso_match:
-        day = iso_match.group(1)
-        hour = iso_match.group(2) or "09"
-        minute = iso_match.group(3) or "00"
-        return datetime.fromisoformat(f"{day}T{int(hour):02d}:{int(minute):02d}:00+00:00")
+        resolved = date.fromisoformat(iso_match.group(1))
+        hour = int(iso_match.group(2) or "09")
+        minute = int(iso_match.group(3) or "00")
+        second = int(iso_match.group(4) or "00")
+        tz_suffix = iso_match.group(5)
+        if tz_suffix:
+            normalized_tz = "+00:00" if tz_suffix == "Z" else tz_suffix
+            if re.fullmatch(r"[+-]\d{4}", normalized_tz):
+                normalized_tz = f"{normalized_tz[:3]}:{normalized_tz[3:]}"
+            parsed = datetime.fromisoformat(
+                f"{resolved.isoformat()}T{hour:02d}:{minute:02d}:{second:02d}{normalized_tz}"
+            )
+            return parsed.astimezone(timezone.utc)
+        return _local_datetime_to_utc(resolved, hour, minute, second)
 
     time_parts = _parse_time_parts(message)
     if not time_parts:
@@ -1119,7 +1154,7 @@ def _parse_start_time(message: str) -> datetime | None:
         day = int(date_match.group(2))
         year = int(date_match.group(3)) if date_match.group(3) else None
         resolved = _future_date_for_month_day(month, day, year)
-        return datetime(resolved.year, resolved.month, resolved.day, hour, minute, tzinfo=timezone.utc)
+        return _local_datetime_to_utc(resolved, hour, minute)
 
     weekday_day_match = re.search(
         r"\b(?:next\s+)?(mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b(?:,?\s+(?:the\s+)?)?(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?",
@@ -1130,7 +1165,7 @@ def _parse_start_time(message: str) -> datetime | None:
         day = int(weekday_day_match.group(2))
         year = int(weekday_day_match.group(3)) if weekday_day_match.group(3) else None
         resolved = _future_date_for_day_number(day, year)
-        return datetime(resolved.year, resolved.month, resolved.day, hour, minute, tzinfo=timezone.utc)
+        return _local_datetime_to_utc(resolved, hour, minute)
 
     weekday_match = re.search(
         r"\b(?:next\s+)?(mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b",
@@ -1140,14 +1175,14 @@ def _parse_start_time(message: str) -> datetime | None:
     if weekday_match:
         weekday_key = weekday_match.group(1).lower()
         resolved = _future_date_for_weekday(weekday_key)
-        return datetime(resolved.year, resolved.month, resolved.day, hour, minute, tzinfo=timezone.utc)
+        return _local_datetime_to_utc(resolved, hour, minute)
 
     day_year_match = re.search(r"\b(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))\b", message, re.IGNORECASE)
     if day_year_match:
         day = int(day_year_match.group(1))
         year = int(day_year_match.group(2))
         resolved = _future_date_for_day_number(day, year)
-        return datetime(resolved.year, resolved.month, resolved.day, hour, minute, tzinfo=timezone.utc)
+        return _local_datetime_to_utc(resolved, hour, minute)
 
     return None
 
@@ -1311,7 +1346,7 @@ def _local_fallback_response(
     except HTTPException as exc:
         return (str(exc.detail), [str(exc.detail)], candidates, None, [])
 
-    return (_draft_summary(draft), [], candidates, draft, [_tool_result("create_meeting_draft", True, draft.model_dump())])
+    return (_draft_summary(draft), [], [], draft, [_tool_result("create_meeting_draft", True, draft.model_dump())])
 
 
 def process_user_message(

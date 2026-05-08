@@ -85,7 +85,5 @@
 
   </div>
 </header>
-{% if active_page != 'assistant' %}
-  {% set assistant_chat_mode = "drawer" %}
-  {% include "_assistant_chat.html" %}
-{% endif %}
+{% set assistant_chat_mode = "drawer" %}
+{% include "_assistant_chat.html" %}

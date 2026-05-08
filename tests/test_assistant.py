@@ -237,7 +237,9 @@ def test_assistant_uses_follow_up_context_for_missing_datetime(client, monkeypat
     assert draft_payload["title"] == "Hoboken Sync"
     assert draft_payload["attendee_emails"] == ["grace@example.com"]
     assert draft_payload["location"] == "Hoboken New Jersey"
-    assert draft_payload["start_time"].startswith("2030-05-11T19:00:00")
+    assert draft_payload["start_time"].startswith("2030-05-11T23:00:00")
+    assert payload["candidate_invitees"] == []
+    assert "May 11, 2030 at 7:00 PM" in payload["assistant_message"]["content"]
     assert _meeting_count() == 0
 
 
@@ -269,7 +271,32 @@ def test_assistant_parses_weekday_day_names_and_location(client, monkeypatch):
     draft_payload = response.json()["pending_draft"]["payload"]
     assert set(draft_payload["attendee_emails"]) == {"alex@example.com", "cameron.kim@example.com"}
     assert draft_payload["location"] == "Hoboken New Jersey"
-    assert draft_payload["start_time"].startswith("2030-05-11T19:00:00")
+    assert draft_payload["start_time"].startswith("2030-05-11T23:00:00")
+    assert _meeting_count() == 0
+
+
+def test_assistant_interprets_plain_language_noon_as_local_time(client, monkeypatch):
+    monkeypatch.setattr(settings, "openai_api_key", None)
+    organizer_token = _register(client, email="ada@example.com", first_name="Ada")
+    _register(client, email="grace@example.com", first_name="Grace")
+
+    organizer_id = _user_id("ada@example.com")
+    grace_id = _user_id("grace@example.com")
+    _create_group(name="Noon Planning", member_roles={organizer_id: "owner", grace_id: "member"})
+
+    thread = client.post("/api/assistant/threads", headers=_headers(organizer_token), json={})
+    thread_id = thread.json()["id"]
+
+    response = client.post(
+        f"/api/assistant/threads/{thread_id}/messages",
+        headers=_headers(organizer_token),
+        json={"message": "Schedule called Lunch Sync on May 25th, 2026 at 12:00 pm with grace@example.com"},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    draft_payload = payload["pending_draft"]["payload"]
+    assert draft_payload["start_time"].startswith("2026-05-25T16:00:00")
+    assert "May 25, 2026 at 12:00 PM" in payload["assistant_message"]["content"]
     assert _meeting_count() == 0
 
 

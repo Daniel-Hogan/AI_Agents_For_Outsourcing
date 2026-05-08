@@ -1,46 +1,53 @@
 {% set assistant_chat_mode = assistant_chat_mode | default("drawer") %}
-{% set assistant_chat_is_page = assistant_chat_mode == "page" %}
 <div
-  class="assistant-chat assistant-chat-{{ assistant_chat_mode }}"
+  class="assistant-chat assistant-chat-widget"
   data-assistant-chat
-  data-assistant-chat-mode="{{ assistant_chat_mode }}"
+  data-assistant-chat-mode="drawer"
 >
-  {% if not assistant_chat_is_page %}
-    <button
-      type="button"
-      class="assistant-chat-bubble"
-      data-assistant-open
-      aria-label="Open AI scheduling assistant"
-      aria-expanded="false"
-    >
-      <span class="assistant-chat-bubble-mark" aria-hidden="true">AI</span>
-      <span class="assistant-chat-bubble-copy">Schedule</span>
-    </button>
-    <div class="assistant-chat-scrim" data-assistant-scrim hidden></div>
-  {% endif %}
+  <button
+    type="button"
+    class="assistant-chat-bubble"
+    data-assistant-open
+    aria-label="Open Scheduler AI assistant"
+    aria-expanded="false"
+  >
+    <span class="assistant-chat-bubble-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+        <path d="M5.5 4.5h13A2.5 2.5 0 0 1 21 7v7.5a2.5 2.5 0 0 1-2.5 2.5h-7.35l-4.48 3.11A.75.75 0 0 1 5.5 19.5V17A2.5 2.5 0 0 1 3 14.5V7a2.5 2.5 0 0 1 2.5-2.5Zm2.25 5.25a.9.9 0 1 0 0 1.8.9.9 0 0 0 0-1.8Zm4.25 0a.9.9 0 1 0 0 1.8.9.9 0 0 0 0-1.8Zm4.25 0a.9.9 0 1 0 0 1.8.9.9 0 0 0 0-1.8Z" fill="currentColor"/>
+      </svg>
+    </span>
+  </button>
+  <div class="assistant-chat-scrim" data-assistant-scrim hidden></div>
 
   <section
     class="assistant-chat-panel"
     data-assistant-panel
-    role="{% if assistant_chat_is_page %}region{% else %}dialog{% endif %}"
+    role="dialog"
     aria-label="AI scheduling assistant"
-    {% if not assistant_chat_is_page %}aria-modal="false" aria-hidden="true" hidden{% else %}aria-hidden="false"{% endif %}
+    aria-modal="false"
+    aria-hidden="true"
+    hidden
   >
     <header class="assistant-chat-header">
       <div>
         <p class="assistant-chat-kicker">Scheduler AI</p>
         <h2>Meeting assistant</h2>
-        <p class="assistant-chat-subtitle">Ask me to schedule, update, or cancel meetings. I will draft first, then wait for your confirmation.</p>
+        <p class="assistant-chat-subtitle">Ready to help draft, move, or cancel meetings.</p>
       </div>
       <div class="assistant-chat-header-actions">
         <button type="button" class="btn btn-soft btn-inline assistant-chat-new" data-assistant-new>New chat</button>
-        {% if not assistant_chat_is_page %}
-          <button type="button" class="assistant-chat-close" data-assistant-close aria-label="Close AI scheduling assistant">&times;</button>
-        {% endif %}
+        <button type="button" class="assistant-chat-close" data-assistant-close aria-label="Minimize AI scheduling assistant">&times;</button>
       </div>
     </header>
 
     <div class="assistant-chat-status" data-assistant-status>Ready when you are.</div>
+
+    <div class="assistant-chat-suggestions" aria-label="Example prompts">
+      <button type="button" data-assistant-suggestion="Schedule a meeting Monday at 7 PM with Alex">Schedule Monday at 7 PM</button>
+      <button type="button" data-assistant-suggestion="Move my meeting with Ben to Friday">Move Ben meeting</button>
+      <button type="button" data-assistant-suggestion="Cancel my planning meeting">Cancel planning</button>
+      <button type="button" data-assistant-suggestion="Find a time with Cameron next week">Find time with Cameron</button>
+    </div>
 
     <div class="assistant-chat-messages" data-assistant-messages aria-live="polite" aria-relevant="additions"></div>
 
@@ -72,10 +79,19 @@
           data-assistant-input
           rows="2"
           maxlength="4000"
-          placeholder="Example: Schedule a meeting Monday at 7 PM with Ben and Alan"
+          placeholder="Ask Scheduler AI to plan your next meeting..."
         ></textarea>
-        <button type="submit" class="btn btn-primary assistant-chat-send" data-assistant-send>Send</button>
+        <button type="submit" class="btn btn-primary assistant-chat-send" data-assistant-send aria-label="Send message">
+          <span aria-hidden="true">&rarr;</span>
+        </button>
       </div>
     </form>
+    <button
+      type="button"
+      class="assistant-chat-resize-handle"
+      data-assistant-resize
+      aria-label="Resize assistant chat"
+      title="Drag to resize"
+    ></button>
   </section>
 </div>

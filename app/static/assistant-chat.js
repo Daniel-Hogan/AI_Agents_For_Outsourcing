@@ -1,5 +1,12 @@
 (function () {
   var STORAGE_KEY = "schedulerai.assistant.threadId";
+  var OPEN_STORAGE_KEY = "schedulerai.assistant.isOpen";
+  var SIZE_STORAGE_KEY = "schedulerai.assistant.size";
+  var CLOSE_ANIMATION_MS = 180;
+  var DEFAULT_PANEL_WIDTH = 420;
+  var DEFAULT_PANEL_HEIGHT = 720;
+  var MIN_PANEL_WIDTH = 360;
+  var MIN_PANEL_HEIGHT = 500;
 
   function requestJson(url, options) {
     var requestOptions = options || {};
@@ -49,6 +56,44 @@
       }
     } catch (error) {
     }
+  }
+
+  function getStoredOpenState() {
+    try {
+      return window.localStorage.getItem(OPEN_STORAGE_KEY) === "true";
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function setStoredOpenState(isOpen) {
+    try {
+      window.localStorage.setItem(OPEN_STORAGE_KEY, isOpen ? "true" : "false");
+    } catch (error) {
+    }
+  }
+
+  function getStoredPanelSize() {
+    try {
+      var parsed = JSON.parse(window.localStorage.getItem(SIZE_STORAGE_KEY) || "null");
+      if (!parsed || typeof parsed.width !== "number" || typeof parsed.height !== "number") {
+        return null;
+      }
+      return parsed;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function setStoredPanelSize(size) {
+    try {
+      window.localStorage.setItem(SIZE_STORAGE_KEY, JSON.stringify(size));
+    } catch (error) {
+    }
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
   }
 
   function formatDateTime(value) {
@@ -121,6 +166,7 @@
     var closeButton = root.querySelector("[data-assistant-close]");
     var scrim = root.querySelector("[data-assistant-scrim]");
     var panel = root.querySelector("[data-assistant-panel]");
+    var resizeHandle = root.querySelector("[data-assistant-resize]");
     var status = root.querySelector("[data-assistant-status]");
     var messages = root.querySelector("[data-assistant-messages]");
     var form = root.querySelector("[data-assistant-form]");
@@ -143,8 +189,33 @@
       isOpen: isPage,
       isBusy: false,
       selectedUserIds: [],
-      pendingDraftId: null
+      pendingDraftId: null,
+      closeTimer: null,
+      resizeStart: null
     };
+
+    function maxPanelWidth() {
+      return Math.max(MIN_PANEL_WIDTH, window.innerWidth - 48);
+    }
+
+    function maxPanelHeight() {
+      return Math.max(MIN_PANEL_HEIGHT, window.innerHeight - 96);
+    }
+
+    function applyPanelSize(size) {
+      if (!size || window.innerWidth <= 640) {
+        return;
+      }
+
+      var width = clamp(size.width || DEFAULT_PANEL_WIDTH, MIN_PANEL_WIDTH, maxPanelWidth());
+      var height = clamp(size.height || DEFAULT_PANEL_HEIGHT, MIN_PANEL_HEIGHT, maxPanelHeight());
+      panel.style.setProperty("--assistant-panel-width", width + "px");
+      panel.style.setProperty("--assistant-panel-height", height + "px");
+    }
+
+    function loadPanelSize() {
+      applyPanelSize(getStoredPanelSize() || { width: DEFAULT_PANEL_WIDTH, height: DEFAULT_PANEL_HEIGHT });
+    }
 
     function setStatus(message, isError) {
       status.textContent = message;
@@ -187,6 +258,15 @@
       scrollMessages();
     }
 
+    function createInlineSection(className, titleText, helperText) {
+      var section = createEl("section", className);
+      var head = createEl("div", "assistant-chat-section-head");
+      head.appendChild(createEl("h3", "", titleText));
+      head.appendChild(createEl("p", "", helperText));
+      section.appendChild(head);
+      return section;
+    }
+
     function resetResponseExtras() {
       state.selectedUserIds = [];
       candidateList.innerHTML = "";
@@ -207,35 +287,47 @@
       }
 
       candidates.forEach(function (candidate) {
-        var label = document.createElement("label");
-        label.className = "assistant-chat-candidate";
-
-        var checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.value = String(candidate.user_id);
-        checkbox.addEventListener("change", function () {
-          var userId = Number(candidate.user_id);
-          if (checkbox.checked) {
-            if (state.selectedUserIds.indexOf(userId) === -1) {
-              state.selectedUserIds.push(userId);
-            }
-          } else {
-            state.selectedUserIds = state.selectedUserIds.filter(function (value) {
-              return value !== userId;
-            });
-          }
-        });
-
-        var copy = createEl("span", "assistant-chat-candidate-copy");
-        copy.appendChild(createEl("strong", "", candidate.display_name || candidate.email));
-        copy.appendChild(createEl("small", "", candidate.email));
-
-        label.appendChild(checkbox);
-        label.appendChild(copy);
-        candidateList.appendChild(label);
+        candidateList.appendChild(createCandidateOption(candidate));
       });
 
       candidatesSection.hidden = false;
+      var inline = createInlineSection("assistant-chat-candidates assistant-chat-inline-card", "Who did you mean?", "Select the right people, then send a short follow-up.");
+      var inlineList = createEl("div", "assistant-chat-candidate-list");
+      candidates.forEach(function (candidate) {
+        inlineList.appendChild(createCandidateOption(candidate));
+      });
+      inline.appendChild(inlineList);
+      messages.appendChild(inline);
+      scrollMessages();
+    }
+
+    function createCandidateOption(candidate) {
+      var label = document.createElement("label");
+      label.className = "assistant-chat-candidate";
+
+      var checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = String(candidate.user_id);
+      checkbox.addEventListener("change", function () {
+        var userId = Number(candidate.user_id);
+        if (checkbox.checked) {
+          if (state.selectedUserIds.indexOf(userId) === -1) {
+            state.selectedUserIds.push(userId);
+          }
+        } else {
+          state.selectedUserIds = state.selectedUserIds.filter(function (value) {
+            return value !== userId;
+          });
+        }
+      });
+
+      var copy = createEl("span", "assistant-chat-candidate-copy");
+      copy.appendChild(createEl("strong", "", candidate.display_name || candidate.email));
+      copy.appendChild(createEl("small", "", candidate.email));
+
+      label.appendChild(checkbox);
+      label.appendChild(copy);
+      return label;
     }
 
     function renderDraft(draft) {
@@ -271,6 +363,21 @@
       draftCard.appendChild(rows);
 
       draftSection.hidden = false;
+      var inline = createInlineSection("assistant-chat-draft assistant-chat-inline-card", "Draft ready", "Review this before anything is saved.");
+      var inlineCard = draftCard.cloneNode(true);
+      var inlineActions = createEl("div", "assistant-chat-draft-actions");
+      var inlineConfirm = createEl("button", "btn btn-primary btn-inline", "Confirm");
+      var inlineDiscard = createEl("button", "btn btn-soft btn-inline", "Discard");
+      inlineConfirm.type = "button";
+      inlineDiscard.type = "button";
+      inlineConfirm.addEventListener("click", confirmDraft);
+      inlineDiscard.addEventListener("click", discardDraft);
+      inlineActions.appendChild(inlineConfirm);
+      inlineActions.appendChild(inlineDiscard);
+      inline.appendChild(inlineCard);
+      inline.appendChild(inlineActions);
+      messages.appendChild(inline);
+      scrollMessages();
       setBusy(state.isBusy);
     }
 
@@ -472,16 +579,24 @@
 
     function openChat() {
       if (!isPage) {
-        state.isOpen = true;
-        panel.hidden = false;
-        panel.setAttribute("aria-hidden", "false");
+        if (state.closeTimer) {
+          window.clearTimeout(state.closeTimer);
+          state.closeTimer = null;
+        }
+      state.isOpen = true;
+      panel.hidden = false;
+      panel.setAttribute("aria-hidden", "false");
+      document.body.classList.add("assistant-widget-open");
         if (scrim) {
           scrim.hidden = false;
         }
         if (openButton) {
           openButton.setAttribute("aria-expanded", "true");
         }
-        root.classList.add("is-open");
+        window.requestAnimationFrame(function () {
+          root.classList.add("is-open");
+        });
+        setStoredOpenState(true);
       }
 
       ensureThread().then(function () {
@@ -496,16 +611,25 @@
       }
 
       state.isOpen = false;
-      panel.hidden = true;
       panel.setAttribute("aria-hidden", "true");
-      if (scrim) {
-        scrim.hidden = true;
-      }
+      root.classList.remove("is-open");
+      document.body.classList.remove("assistant-widget-open");
       if (openButton) {
         openButton.setAttribute("aria-expanded", "false");
         openButton.focus();
       }
-      root.classList.remove("is-open");
+      setStoredOpenState(false);
+
+      if (state.closeTimer) {
+        window.clearTimeout(state.closeTimer);
+      }
+      state.closeTimer = window.setTimeout(function () {
+        panel.hidden = true;
+        if (scrim) {
+          scrim.hidden = true;
+        }
+        state.closeTimer = null;
+      }, CLOSE_ANIMATION_MS);
     }
 
     if (openButton) {
@@ -516,12 +640,65 @@
       newButton.addEventListener("click", startNewThread);
     }
 
+    root.querySelectorAll("[data-assistant-suggestion]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        if (state.isBusy) {
+          return;
+        }
+        input.value = button.getAttribute("data-assistant-suggestion") || button.textContent || "";
+        form.requestSubmit();
+      });
+    });
+
     if (closeButton) {
       closeButton.addEventListener("click", closeChat);
     }
 
     if (scrim) {
       scrim.addEventListener("click", closeChat);
+    }
+
+    if (resizeHandle) {
+      resizeHandle.addEventListener("pointerdown", function (event) {
+        if (window.innerWidth <= 640) {
+          return;
+        }
+        event.preventDefault();
+        resizeHandle.setPointerCapture(event.pointerId);
+        var rect = panel.getBoundingClientRect();
+        state.resizeStart = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          width: rect.width,
+          height: rect.height
+        };
+        root.classList.add("is-resizing");
+      });
+
+      resizeHandle.addEventListener("pointermove", function (event) {
+        if (!state.resizeStart || state.resizeStart.pointerId !== event.pointerId) {
+          return;
+        }
+        var nextWidth = clamp(state.resizeStart.width + (state.resizeStart.startX - event.clientX), MIN_PANEL_WIDTH, maxPanelWidth());
+        var nextHeight = clamp(state.resizeStart.height + (event.clientY - state.resizeStart.startY), MIN_PANEL_HEIGHT, maxPanelHeight());
+        applyPanelSize({ width: nextWidth, height: nextHeight });
+      });
+
+      resizeHandle.addEventListener("pointerup", function (event) {
+        if (!state.resizeStart || state.resizeStart.pointerId !== event.pointerId) {
+          return;
+        }
+        var rect = panel.getBoundingClientRect();
+        setStoredPanelSize({ width: Math.round(rect.width), height: Math.round(rect.height) });
+        state.resizeStart = null;
+        root.classList.remove("is-resizing");
+      });
+
+      resizeHandle.addEventListener("pointercancel", function () {
+        state.resizeStart = null;
+        root.classList.remove("is-resizing");
+      });
     }
 
     confirmButton.addEventListener("click", confirmDraft);
@@ -563,18 +740,42 @@
       renderWelcome();
       ensureThread().catch(function () {
       });
+    } else if (getStoredOpenState()) {
+      loadPanelSize();
+      openChat();
     } else {
+      loadPanelSize();
       setBusy(false);
     }
+
+    window.addEventListener("resize", loadPanelSize);
+
+    return {
+      open: openChat,
+      close: closeChat
+    };
   }
 
   function initialize() {
+    var firstController = null;
     document.querySelectorAll("[data-assistant-chat]").forEach(function (root) {
       if (root.dataset.assistantChatEnhanced === "true") {
         return;
       }
       root.dataset.assistantChatEnhanced = "true";
-      setupAssistantChat(root);
+      var controller = setupAssistantChat(root);
+      if (!firstController && controller) {
+        firstController = controller;
+      }
+    });
+
+    document.addEventListener("click", function (event) {
+      var opener = event.target.closest("[data-assistant-open-any]");
+      if (!opener || !firstController) {
+        return;
+      }
+      event.preventDefault();
+      firstController.open();
     });
   }
 

@@ -20,15 +20,16 @@
 
     <section class="assistant-page-hero">
       <p class="section-kicker">AI Scheduling</p>
-      <h1>Tell Scheduler AI what you need.</h1>
+      <h1>Scheduler AI now lives in your corner.</h1>
       <p>
-        Use natural language to draft meetings, update plans, and cancel events.
-        The assistant will always ask you to confirm before changing your calendar.
+        Click the floating chat button in the bottom-right corner to open the assistant from anywhere in the app.
+        It drafts meeting changes first, then waits for your confirmation.
       </p>
+      <div class="assistant-page-actions">
+        <button type="button" class="btn btn-primary btn-inline" data-assistant-open-any>Open assistant</button>
+        <a class="btn btn-soft btn-inline" href="{{ url_for('web_meetings') }}">Use manual scheduler</a>
+      </div>
     </section>
-
-    {% set assistant_chat_mode = "page" %}
-    {% include "_assistant_chat.html" %}
   </main>
 </body>
 </html>
