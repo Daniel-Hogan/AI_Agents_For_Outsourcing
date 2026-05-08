@@ -1,4 +1,5 @@
 import calendar as month_calendar
+import json
 import re
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
@@ -160,6 +161,25 @@ def _build_location_form_state(
         "location_raw": location_raw.strip(),
         "location_latitude": location_latitude.strip(),
         "location_longitude": location_longitude.strip(),
+    }
+
+
+def _build_group_meeting_form_state(*, invitees: str = "") -> dict[str, str]:
+    now = datetime.now(timezone.utc)
+    start_dt = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    end_dt = start_dt + timedelta(hours=1)
+    return {
+        "title": "",
+        "meeting_type": "in_person",
+        **_build_location_form_state(
+            location="",
+            location_raw="",
+            location_latitude="",
+            location_longitude="",
+        ),
+        "start_time": _format_datetime_local_value(start_dt),
+        "end_time": _format_datetime_local_value(end_dt),
+        "invitees": invitees,
     }
 
 
@@ -939,6 +959,127 @@ def _load_user_preferences(db: Session, user_id: int) -> list[dict[str, Any]]:
     return preferences
 
 
+def _preferences_to_selected_cells(preferences: list[dict[str, Any]]) -> list[dict[str, int]]:
+    selected_cells: list[dict[str, int]] = []
+    for preference in preferences:
+        day_idx = int(preference["day_of_week"])
+        start_time = _parse_time_value(preference["start_time"])
+        end_time = _parse_time_value(preference["end_time"])
+        start_minutes = start_time.hour * 60 + start_time.minute
+        end_minutes = end_time.hour * 60 + end_time.minute
+        for minute_value in range(start_minutes, end_minutes, 15):
+            selected_cells.append({"day_of_week": day_idx, "start_minutes": minute_value})
+    # Sort consistently: by day first, then by minute
+    return sorted(selected_cells, key=lambda cell: (cell["day_of_week"], cell["start_minutes"]))
+
+
+def _parse_selected_cells(raw: str) -> list[tuple[int, int]]:
+    value = raw.strip()
+    if not value:
+        return []
+
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+
+    selected_cells: list[tuple[int, int]] = []
+    if not isinstance(payload, list):
+        return selected_cells
+
+    for item in payload:
+        day_value: Any = None
+        minute_value: Any = None
+        if isinstance(item, dict):
+            day_value = item.get("day_of_week", item.get("day"))
+            minute_value = item.get("start_minutes", item.get("minute"))
+        elif isinstance(item, (list, tuple)) and len(item) >= 2:
+            day_value, minute_value = item[0], item[1]
+        elif isinstance(item, str) and ":" in item:
+            day_part, minute_part = item.split(":", 1)
+            day_value, minute_value = day_part, minute_part
+
+        try:
+            day_idx = int(day_value)
+            minute_idx = int(minute_value)
+        except (TypeError, ValueError):
+            continue
+
+        if day_idx not in DAY_NAME_BY_INDEX:
+            continue
+        if minute_idx % 15 != 0:
+            continue
+        if minute_idx < 7 * 60 or minute_idx >= 23 * 60:
+            continue
+        selected_cells.append((day_idx, minute_idx))
+
+    return selected_cells
+
+
+def _build_availability_calendar(
+    preferences: list[dict[str, Any]],
+    *,
+    selected_cells: list[tuple[int, int]] | None = None,
+) -> dict[str, Any]:
+    selected_set = set(selected_cells or [])
+    if not selected_set:
+        selected_set = {
+            (cell["day_of_week"], cell["start_minutes"])
+            for cell in _preferences_to_selected_cells(preferences)
+        }
+
+    preference_windows: dict[int, list[tuple[int, int]]] = {day_idx: [] for day_idx, _ in DAY_OPTIONS}
+    for preference in preferences:
+        day_idx = int(preference["day_of_week"])
+        start_time = _parse_time_value(preference["start_time"])
+        end_time = _parse_time_value(preference["end_time"])
+        start_minutes = start_time.hour * 60 + start_time.minute
+        end_minutes = end_time.hour * 60 + end_time.minute
+        preference_windows[day_idx].append((start_minutes, end_minutes))
+
+    rows: list[dict[str, Any]] = []
+    for minute_value in range(7 * 60, 23 * 60, 15):
+        slot_end = minute_value + 15
+        is_hour = minute_value % 60 == 0
+        hour_value = (minute_value // 60) % 12 or 12
+        period_value = "AM" if minute_value < 12 * 60 else "PM"
+        row_cells: list[dict[str, Any]] = []
+
+        for day_idx, _day_name in DAY_OPTIONS:
+            is_available = any(
+                window_start <= minute_value and window_end >= slot_end
+                for window_start, window_end in preference_windows[day_idx]
+            )
+            row_cells.append(
+                {
+                    "day_of_week": day_idx,
+                    "start_minutes": minute_value,
+                    "end_minutes": slot_end,
+                    "is_available": is_available,
+                    "is_selected": (day_idx, minute_value) in selected_set,
+                }
+            )
+
+        rows.append(
+            {
+                "label": f"{hour_value}:00 {period_value}" if is_hour else "",
+                "is_hour": is_hour,
+                "start_minutes": minute_value,
+                "end_minutes": slot_end,
+                "cells": row_cells,
+            }
+        )
+
+    return {
+        "rows": rows,
+        "selected_cells": [
+            {"day_of_week": day_idx, "start_minutes": minute_value}
+            for day_idx, minute_value in sorted(selected_set, key=lambda value: (value[0], value[1]))
+        ],
+        "selected_count": len(selected_set),
+    }
+
+
 def _availability_context(
     db: Session,
     *,
@@ -946,11 +1087,21 @@ def _availability_context(
     form_data: dict[str, Any] | None = None,
     next_path: str,
 ) -> dict[str, Any]:
+    preferences = _load_user_preferences(db, user_id)
+    selected_cells = _parse_selected_cells(str((form_data or {}).get("selected_cells", "")))
     return {
-        "preferences": _load_user_preferences(db, user_id),
+        "preferences": preferences,
         "day_options": DAY_OPTIONS,
         "day_short_names": DAY_SHORT_NAME_BY_INDEX,
-        "availability_form_data": form_data or {"selected_days": [], "start_time": "", "end_time": ""},
+        "availability_form_data": form_data or {"selected_cells": ""},
+        "availability_calendar": _build_availability_calendar(preferences, selected_cells=selected_cells),
+        "availability_selected_cells_json": json.dumps(
+            [
+                {"day_of_week": day_idx, "start_minutes": minute}
+                for day_idx, minute in (selected_cells or [])
+            ]
+            or _preferences_to_selected_cells(preferences)
+        ),
         "availability_next": next_path,
     }
 
@@ -1361,6 +1512,137 @@ def _build_member_availability_grid(db: Session, *, user_id: int) -> dict[str, A
         "rows": rows,
         "has_preferences": bool(preferences),
         "active_days_label": ", ".join(active_days) if active_days else "",
+    }
+
+
+def _build_group_availability_grid(db: Session, *, group_id: int) -> dict[str, Any]:
+    rows = db.execute(
+        text(
+            """
+            SELECT
+                u.id AS user_id,
+                u.email,
+                u.first_name,
+                u.last_name,
+                gm.role,
+                tsp.day_of_week,
+                tsp.start_time::text AS start_time,
+                tsp.end_time::text AS end_time
+            FROM group_memberships gm
+            JOIN users u ON u.id = gm.user_id
+            LEFT JOIN time_slot_preferences tsp ON tsp.user_id = u.id
+            WHERE gm.group_id = :group_id
+            ORDER BY
+                CASE gm.role
+                    WHEN 'owner' THEN 0
+                    WHEN 'admin' THEN 1
+                    ELSE 2
+                END,
+                LOWER(u.email) ASC,
+                tsp.day_of_week ASC,
+                tsp.start_time ASC
+            """
+        ),
+        {"group_id": group_id},
+    ).mappings().all()
+
+    members_by_id: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        user_id = int(row["user_id"])
+        member = members_by_id.setdefault(
+            user_id,
+            {
+                "id": user_id,
+                "email": row["email"],
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+                "role": row["role"],
+                "display_name": _display_name_for_user(
+                    first_name=row.get("first_name"),
+                    last_name=row.get("last_name"),
+                    email=str(row["email"]),
+                ),
+                "initials": _initials_for_user(
+                    first_name=row.get("first_name"),
+                    last_name=row.get("last_name"),
+                    email=str(row["email"]),
+                ),
+                "slots": [],
+            },
+        )
+        if row["day_of_week"] is not None:
+            member["slots"].append(
+                {
+                    "day_of_week": int(row["day_of_week"]),
+                    "start_time": str(row["start_time"]),
+                    "end_time": str(row["end_time"]),
+                }
+            )
+
+    availability_by_day: dict[int, list[tuple[int, int, int]]] = {day_idx: [] for day_idx, _ in DAY_OPTIONS}
+    all_member_ids = [int(member["id"]) for member in members_by_id.values()]
+    member_name_by_id = {int(member["id"]): str(member["display_name"]) for member in members_by_id.values()}
+    for member in members_by_id.values():
+        for slot in member["slots"]:
+            start_hours, start_minutes = [int(part) for part in slot["start_time"].split(":")[:2]]
+            end_hours, end_minutes = [int(part) for part in slot["end_time"].split(":")[:2]]
+            availability_by_day[int(slot["day_of_week"])].append(
+                (start_hours * 60 + start_minutes, end_hours * 60 + end_minutes, int(member["id"]))
+            )
+
+    rows_out: list[dict[str, Any]] = []
+    start_minute = 7 * 60
+    end_minute = 23 * 60
+    total_members = len(members_by_id)
+
+    for minute_value in range(start_minute, end_minute, 15):
+        slot_start = minute_value
+        slot_end = minute_value + 15
+        display_hour = (slot_start // 60) % 12 or 12
+        display_minutes = slot_start % 60
+        display_period = "AM" if slot_start < 12 * 60 else "PM"
+        is_hour = display_minutes == 0
+        row_cells: list[dict[str, Any]] = []
+
+        for day_idx, _day_name in DAY_OPTIONS:
+            available_member_ids: set[int] = set()
+            for window_start, window_end, member_id in availability_by_day[day_idx]:
+                if window_start < slot_end and window_end > slot_start:
+                    available_member_ids.add(member_id)
+
+            available_count = len(available_member_ids)
+            unavailable_member_ids = [member_id for member_id in all_member_ids if member_id not in available_member_ids]
+            status = "none"
+            if available_count == total_members and total_members > 0:
+                status = "full"
+            elif available_count > 0:
+                status = "partial"
+
+            row_cells.append(
+                {
+                    "day_of_week": day_idx,
+                    "available_count": available_count,
+                    "total_count": total_members,
+                    "status": status,
+                    "unavailable_count": len(unavailable_member_ids),
+                    "unavailable_members": [member_name_by_id[member_id] for member_id in unavailable_member_ids],
+                }
+            )
+
+        rows_out.append(
+            {
+                "label": f"{display_hour}:{display_minutes:02d} {display_period}" if is_hour else "",
+                "is_hour": is_hour,
+                "start_minutes": slot_start,
+                "end_minutes": slot_end,
+                "cells": row_cells,
+            }
+        )
+
+    return {
+        "rows": rows_out,
+        "members": list(members_by_id.values()),
+        "has_preferences": bool(members_by_id),
     }
 
 
@@ -1937,6 +2219,7 @@ def _render_group_detail_page(
         return RedirectResponse(url="/groups", status_code=303)
 
     roster = _load_group_roster(db, group_id=group_id)
+    roster_invitees = ", ".join(member["email"] for member in roster)
     selected_member = None
     if membership["can_manage"] and member_id is not None:
         selected_member = _load_group_member(db, group_id=group_id, member_id=member_id)
@@ -1954,6 +2237,8 @@ def _render_group_detail_page(
         else {"rows": [], "has_preferences": False, "active_days_label": ""}
     )
 
+    group_meeting_grid = _build_group_availability_grid(db, group_id=group_id)
+
     return templates.TemplateResponse(
         request=request,
         name="group_detail.html",
@@ -1965,10 +2250,12 @@ def _render_group_detail_page(
             "group_can_manage": membership["can_manage"],
             "group_roster": roster,
             "group_invite_form": invite_form or {"invitees": "", "role": "member"},
+            "group_meeting_form": _build_group_meeting_form_state(invitees=roster_invitees),
             "group_calendar_view": _build_calendar_context(
                 _load_group_upcoming_meetings(db, group_id=group_id),
                 selected_month_raw=month,
             ),
+            "group_meeting_grid": group_meeting_grid,
             "selected_member": selected_member,
             "selected_member_meetings": selected_member_meetings,
             "selected_member_availability": selected_member_availability,
@@ -2764,6 +3051,7 @@ def groups_update_member_role(
 @router.post("/availability/add", name="web_availability_add")
 def availability_add(
     request: Request,
+    selected_cells: str = Form(""),
     day_of_week: list[str] = Form([]),
     start_time: str = Form(""),
     end_time: str = Form(""),
@@ -2776,29 +3064,69 @@ def availability_add(
         return RedirectResponse(url="/", status_code=303)
 
     form_data = {
+        "selected_cells": selected_cells.strip(),
         "selected_days": [value.strip() for value in day_of_week if value.strip()],
         "start_time": start_time.strip(),
         "end_time": end_time.strip(),
     }
+    selected_cells_raw = selected_cells.strip()
+    is_painted_submission = selected_cells_raw.startswith("[") and selected_cells_raw.endswith("]")
     next_path = _normalize_next_path(next, default="/availability")
 
     try:
-        day_values = _parse_day_values(day_of_week)
-        start_value = _parse_time_value(start_time)
-        end_value = _parse_time_value(end_time)
+        parsed_selected_cells = _parse_selected_cells(selected_cells) if is_painted_submission else []
+        if is_painted_submission:
+            grouped_windows: dict[int, list[int]] = {day_idx: [] for day_idx, _ in DAY_OPTIONS}
+            for day_idx, minute_value in parsed_selected_cells:
+                grouped_windows[day_idx].append(minute_value)
+
+            selection_windows: list[tuple[int, time, time]] = []
+            for day_idx, minute_values in grouped_windows.items():
+                if not minute_values:
+                    continue
+                minute_values = sorted(set(minute_values))
+                window_start = minute_values[0]
+                window_previous = minute_values[0]
+                for minute_value in minute_values[1:]:
+                    if minute_value == window_previous + 15:
+                        window_previous = minute_value
+                        continue
+                    selection_windows.append(
+                        (
+                            day_idx,
+                            time(hour=window_start // 60, minute=window_start % 60),
+                            time(hour=(window_previous + 15) // 60, minute=(window_previous + 15) % 60),
+                        )
+                    )
+                    window_start = minute_value
+                    window_previous = minute_value
+                selection_windows.append(
+                    (
+                        day_idx,
+                        time(hour=window_start // 60, minute=window_start % 60),
+                        time(hour=(window_previous + 15) // 60, minute=(window_previous + 15) % 60),
+                    )
+                )
+            day_values = [day_idx for day_idx, _start, _end in selection_windows]
+            start_value = selection_windows[0][1] if selection_windows else None
+            end_value = selection_windows[0][2] if selection_windows else None
+        else:
+            day_values = _parse_day_values(day_of_week)
+            start_value = _parse_time_value(start_time)
+            end_value = _parse_time_value(end_time)
     except Exception:
         _push_flash(request, "error", "Use valid day/start/end values.")
         if next_path == "/settings":
             return _render_settings_page(request, db=db, user=user, availability_form_data=form_data)
         return _render_availability_page(request, db=db, user=user, form_data=form_data)
 
-    if not day_values:
+    if not is_painted_submission and not day_values:
         _push_flash(request, "error", "Pick at least one day.")
         if next_path == "/settings":
             return _render_settings_page(request, db=db, user=user, availability_form_data=form_data)
         return _render_availability_page(request, db=db, user=user, form_data=form_data)
 
-    if end_value <= start_value:
+    if not is_painted_submission and end_value <= start_value:
         _push_flash(request, "error", "End time must be after start time.")
         if next_path == "/settings":
             return _render_settings_page(request, db=db, user=user, availability_form_data=form_data)
@@ -2806,19 +3134,23 @@ def availability_add(
 
     inserted_days: list[str] = []
     overlapping_days: list[str] = []
-    for day_value in day_values:
-        overlaps_existing = bool(
+    if is_painted_submission:
+        db.execute(
+            text(
+                """
+                DELETE FROM time_slot_preferences
+                WHERE user_id = :user_id
+                """
+            ),
+            {"user_id": user.id},
+        )
+
+        for day_value, start_value, end_value in selection_windows:
             db.execute(
                 text(
                     """
-                    SELECT EXISTS (
-                        SELECT 1
-                        FROM time_slot_preferences
-                        WHERE user_id = :user_id
-                          AND day_of_week = :day_of_week
-                          AND start_time < :end_time
-                          AND end_time > :start_time
-                    )
+                    INSERT INTO time_slot_preferences (user_id, day_of_week, start_time, end_time)
+                    VALUES (:user_id, :day_of_week, :start_time, :end_time)
                     """
                 ),
                 {
@@ -2827,46 +3159,62 @@ def availability_add(
                     "start_time": start_value,
                     "end_time": end_value,
                 },
-            ).scalar_one()
-        )
-        if overlaps_existing:
-            overlapping_days.append(DAY_SHORT_NAME_BY_INDEX[day_value])
-            continue
+            )
+            inserted_days.append(DAY_SHORT_NAME_BY_INDEX[day_value])
+    else:
+        for day_value in day_values:
+            overlaps_existing = bool(
+                db.execute(
+                    text(
+                        """
+                        SELECT EXISTS (
+                            SELECT 1
+                            FROM time_slot_preferences
+                            WHERE user_id = :user_id
+                              AND day_of_week = :day_of_week
+                              AND start_time < :end_time
+                              AND end_time > :start_time
+                        )
+                        """
+                    ),
+                    {
+                        "user_id": user.id,
+                        "day_of_week": day_value,
+                        "start_time": start_value,
+                        "end_time": end_value,
+                    },
+                ).scalar_one()
+            )
+            if overlaps_existing:
+                overlapping_days.append(DAY_SHORT_NAME_BY_INDEX[day_value])
+                continue
 
-        db.execute(
-            text(
-                """
-                INSERT INTO time_slot_preferences (user_id, day_of_week, start_time, end_time)
-                VALUES (:user_id, :day_of_week, :start_time, :end_time)
-                """
-            ),
-            {
-                "user_id": user.id,
-                "day_of_week": day_value,
-                "start_time": start_value,
-                "end_time": end_value,
-            },
-        )
-        inserted_days.append(DAY_SHORT_NAME_BY_INDEX[day_value])
+            db.execute(
+                text(
+                    """
+                    INSERT INTO time_slot_preferences (user_id, day_of_week, start_time, end_time)
+                    VALUES (:user_id, :day_of_week, :start_time, :end_time)
+                    """
+                ),
+                {
+                    "user_id": user.id,
+                    "day_of_week": day_value,
+                    "start_time": start_value,
+                    "end_time": end_value,
+                },
+            )
+            inserted_days.append(DAY_SHORT_NAME_BY_INDEX[day_value])
 
     db.commit()
 
-    if inserted_days:
-        _push_flash(
-            request,
-            "success",
-            f"Availability added for {', '.join(inserted_days)}.",
-        )
-    if overlapping_days:
-        _push_flash(
-            request,
-            "warning" if inserted_days else "error",
-            f"Skipped overlapping preferences for {', '.join(overlapping_days)}.",
-        )
+    if is_painted_submission:
+        return RedirectResponse(url=next_path, status_code=303)
+
     if not inserted_days:
         if next_path == "/settings":
             return _render_settings_page(request, db=db, user=user, availability_form_data=form_data)
         return _render_availability_page(request, db=db, user=user, form_data=form_data)
+
     return RedirectResponse(url=next_path, status_code=303)
 
 
