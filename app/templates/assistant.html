@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Assistant</title>
+  {% include "_theme_head.html" %}
+</head>
+<body class="assistant-page">
+  {% include "_app_header.html" %}
+
+  <main class="assistant-page-shell app-page-shell">
+    {% if messages %}
+      <div class="toasts" aria-live="polite" aria-atomic="true">
+        {% for item in messages %}
+          <div class="toast toast-{{ item['category'] }}">{{ item["message"] }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <section class="assistant-page-hero">
+      <p class="section-kicker">AI Scheduling</p>
+      <h1>Scheduler AI now lives in your corner.</h1>
+      <p>
+        Click the floating chat button in the bottom-right corner to open the assistant from anywhere in the app.
+        It drafts meeting changes first, then waits for your confirmation.
+      </p>
+      <div class="assistant-page-actions">
+        <button type="button" class="btn btn-primary btn-inline" data-assistant-open-any>Open assistant</button>
+        <a class="btn btn-soft btn-inline" href="{{ url_for('web_meetings') }}">Use manual scheduler</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

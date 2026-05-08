@@ -153,6 +153,29 @@ CREATE TABLE notifications (
   read_at TIMESTAMPTZ
 );
 
+CREATE TABLE assistant_threads (
+  id BIGSERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL DEFAULT 'New scheduling chat',
+  messages_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  openai_thread_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE assistant_draft_actions (
+  id BIGSERIAL PRIMARY KEY,
+  thread_id BIGINT NOT NULL REFERENCES assistant_threads(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  action_type TEXT NOT NULL CHECK (action_type IN ('create_meeting', 'update_meeting', 'cancel_meeting')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'discarded', 'failed')),
+  target_meeting_id INTEGER REFERENCES meetings(id) ON DELETE SET NULL,
+  payload_json JSONB NOT NULL,
+  result_json JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX idx_time_slot_preferences_user_id ON time_slot_preferences(user_id);
 CREATE INDEX idx_group_memberships_group_id ON group_memberships(group_id);
 CREATE INDEX idx_user_calendars_user_id ON user_calendars(user_id);
@@ -163,3 +186,6 @@ CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
 CREATE INDEX idx_notification_preferences_user_id ON notification_preferences(user_id);
 CREATE INDEX idx_notifications_user_id ON notifications(user_id);
 CREATE INDEX idx_notifications_meeting_id ON notifications(meeting_id);
+CREATE INDEX idx_assistant_threads_user_id ON assistant_threads(user_id);
+CREATE INDEX idx_assistant_draft_actions_thread_id ON assistant_draft_actions(thread_id);
+CREATE INDEX idx_assistant_draft_actions_user_status ON assistant_draft_actions(user_id, status);

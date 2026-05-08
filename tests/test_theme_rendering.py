@@ -70,6 +70,7 @@ def _assert_theme_hooks(response_text: str) -> None:
     assert "planner-theme" in response_text
     assert "theme.js" in response_text
     assert "app-shell.js" in response_text
+    assert "assistant-chat.js" in response_text
     assert "data-theme-toggle" in response_text
 
 
@@ -77,8 +78,10 @@ def _assert_app_header(response_text: str) -> None:
     assert "app-header" in response_text
     assert "Scheduler AI" in response_text
     assert "/dashboard" in response_text
+    assert "/assistant" in response_text
     assert "/settings" in response_text
     assert "data-notification-bell-button" in response_text
+    assert "data-assistant-chat" in response_text
 
 
 def test_auth_pages_include_theme_bootstrap_and_toggle(client):
@@ -89,13 +92,15 @@ def test_auth_pages_include_theme_bootstrap_and_toggle(client):
     signup_response = client.get("/signup")
     assert signup_response.status_code == 200, signup_response.text
     _assert_theme_hooks(signup_response.text)
+    assert "data-assistant-chat" not in index_response.text
+    assert "data-assistant-chat" not in signup_response.text
 
 
 def test_signed_in_pages_include_theme_bootstrap_and_toggle(client):
     _register_user(client)
     _web_login(client)
 
-    for path in ("/dashboard", "/meetings", "/meetings/overview", "/calendar", "/availability", "/settings", "/groups"):
+    for path in ("/dashboard", "/meetings", "/meetings/overview", "/calendar", "/availability", "/settings", "/groups", "/assistant"):
         response = client.get(path)
         assert response.status_code == 200, response.text
         _assert_theme_hooks(response.text)

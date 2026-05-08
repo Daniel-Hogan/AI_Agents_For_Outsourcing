@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     organization_default_location_latitude: float | None = None
     organization_default_location_longitude: float | None = None
 
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-5.4-mini"
+    openai_base_url: str | None = None
+
     @field_validator("organization_default_location_latitude", "organization_default_location_longitude", mode="before")
     @classmethod
     def _empty_string_to_none(cls, value):

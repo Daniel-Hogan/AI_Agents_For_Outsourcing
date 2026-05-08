@@ -46,9 +46,6 @@
       grid-template-columns: 1fr 1fr;
       gap: 2rem;
     }
-    @media (max-width: 768px) {
-      .dashboard-sections { grid-template-columns: 1fr; }
-    }
     .dashboard-section-header {
       display: flex;
       align-items: center;
@@ -112,8 +109,14 @@
       color: var(--muted-strong, #475569);
       flex-shrink: 0;
     }
-    .role-organizer { background: #dbeafe; color: #1d4ed8; }
-    .role-participant { background: #f0fdf4; color: #15803d; }
+    .role-organizer {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+    .role-participant {
+      background: #f0fdf4;
+      color: #15803d;
+    }
     .badge-warning {
       display: inline-flex;
       align-items: center;
@@ -137,6 +140,11 @@
       font-size: 0.9rem;
       margin: 0;
     }
+    @media (max-width: 768px) {
+      .dashboard-sections {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 <body class="dashboard-page">
@@ -152,7 +160,6 @@
     {% endif %}
 
     <section class="card">
-
       <div class="dashboard-header">
         <div>
           <p class="section-kicker">Control Center</p>
@@ -170,7 +177,6 @@
       <hr class="dashboard-divider" />
 
       <div class="dashboard-sections">
-
         <div>
           <div class="dashboard-section-header">
             <div>
@@ -235,12 +241,10 @@
               {% endfor %}
             </ul>
           {% else %}
-            <p class="empty-state-message">You're all caught up — no pending invites.</p>
+            <p class="empty-state-message">You're all caught up - no pending invites.</p>
           {% endif %}
         </div>
-
       </div>
-
     </section>
   </main>
 </body>
